@@ -46,39 +46,40 @@ export default function DashboardScreen() {
     setExpandedCard(prev => prev === key ? null : key);
   };
 
+  // ── Cross-platform confirm ──────────────────────────────────
+  const confirmAction = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${title}\n${message}`)) onConfirm();
+    } else {
+      Alert.alert(title, message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: onConfirm }
+      ]);
+    }
+  };
+
   // ── Delete session ──────────────────────────────────────────
   const deleteSession = (index: number) => {
-    Alert.alert('Delete Session', 'Are you sure you want to delete this session?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          const all = await getSessions();
-          // sessions are reversed in display, so map back to original index
-          const originalIndex = all.length - 1 - index;
-          all.splice(originalIndex, 1);
-          await saveSessions(all);
-          loadData();
-          setExpandedCard(null);
-        }
-      }
-    ]);
+    confirmAction('Delete Session', 'Are you sure you want to delete this session?', async () => {
+      const all = await getSessions();
+      const originalIndex = all.length - 1 - index;
+      all.splice(originalIndex, 1);
+      await saveSessions(all);
+      loadData();
+      setExpandedCard(null);
+    });
   };
 
   // ── Delete round ────────────────────────────────────────────
   const deleteRound = (index: number) => {
-    Alert.alert('Delete Round', 'Are you sure you want to delete this round?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive', onPress: async () => {
-          const all = await getRounds();
-          const originalIndex = all.length - 1 - index;
-          all.splice(originalIndex, 1);
-          await saveRounds(all);
-          loadData();
-          setExpandedCard(null);
-        }
-      }
-    ]);
+    confirmAction('Delete Round', 'Are you sure you want to delete this round?', async () => {
+      const all = await getRounds();
+      const originalIndex = all.length - 1 - index;
+      all.splice(originalIndex, 1);
+      await saveRounds(all);
+      loadData();
+      setExpandedCard(null);
+    });
   };
 
   // ── Open date picker ────────────────────────────────────────
