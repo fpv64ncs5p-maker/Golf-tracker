@@ -23,9 +23,10 @@ async function getFromSupabase<T>(table: string): Promise<T | null> {
       .from(table)
       .select('data')
       .eq('id', 'singleton')
-      .maybeSingle();
-    if (error || !data) return null;
-    return data.data as T;
+      .limit(1);
+    if (error) { console.error(`[Storage] Read error "${table}":`, error); return null; }
+    if (!data || data.length === 0) return null;
+    return data[0].data as T;
   } catch (error) {
     console.error(`[Storage] Error reading "${table}":`, error);
     return null;
@@ -34,9 +35,10 @@ async function getFromSupabase<T>(table: string): Promise<T | null> {
 
 async function saveToSupabase<T>(table: string, value: T): Promise<void> {
   try {
-    await supabase
+    const { error } = await supabase
       .from(table)
-      .upsert({ id: 'singleton', data: value }, { onConflict: 'id' });
+      .upsert({ id: 'singleton', data: value });
+    if (error) console.error(`[Storage] Write error "${table}":`, error);
   } catch (error) {
     console.error(`[Storage] Error writing "${table}":`, error);
   }
