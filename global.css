@@ -1,0 +1,14 @@
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Prevent inputs from overflowing on mobile */
+input, textarea, select {
+  max-width: 100%;
+}

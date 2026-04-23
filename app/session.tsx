@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: '#555' },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
 
-  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 10, width: '100%' },
+  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 10, width: '100%', flexWrap: 'wrap' },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, backgroundColor: '#fafafa' },
   inputWide: { flex: 2 },
   inputSmall: { flex: 1 },
