@@ -214,8 +214,8 @@ export default function SessionScreen() {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#fff' },
-  topSection: { flex: 1, padding: 24 },
+  wrapper: { flex: 1, backgroundColor: '#fff', maxWidth: '100%', overflow: 'hidden' as any },
+  topSection: { flex: 1, padding: 16 },
   sessionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   type: { fontSize: 22, fontWeight: 'bold' },
   discardBtn: { padding: 4 },
@@ -228,8 +228,8 @@ const styles = StyleSheet.create({
 
   bottomSection: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
 
-  chipsScroll: { marginBottom: 10 },
-  chipsContainer: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  chipsScroll: { marginBottom: 10, overflow: 'scroll' as any },
+  chipsContainer: { flexDirection: 'row', gap: 8, paddingVertical: 4, paddingHorizontal: 2 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: '#555' },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
 
-  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 10, width: '100%' },
   input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, backgroundColor: '#fafafa' },
   inputWide: { flex: 2 },
   inputSmall: { flex: 1 },
