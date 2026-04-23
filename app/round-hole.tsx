@@ -199,14 +199,20 @@ export default function RoundHoleScreen() {
   };
 
   const confirmExitRound = () => {
-    Alert.alert(
-      'Exit Round?',
-      'Your progress so far is saved, but the current hole will not be. Are you sure you want to leave?',
-      [
-        { text: 'Keep Playing', style: 'cancel' },
-        { text: 'Exit', style: 'destructive', onPress: () => router.push('/') },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      if (window.confirm('Exit Round?\n\nYour progress so far is saved, but the current hole will not be. Are you sure you want to leave?')) {
+        router.push('/');
+      }
+    } else {
+      Alert.alert(
+        'Exit Round?',
+        'Your progress so far is saved, but the current hole will not be. Are you sure you want to leave?',
+        [
+          { text: 'Keep Playing', style: 'cancel' },
+          { text: 'Exit', style: 'destructive', onPress: () => router.push('/') },
+        ]
+      );
+    }
   };
 
   const caddieAdvice = getCaddieAdvice();

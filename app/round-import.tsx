@@ -71,11 +71,11 @@ export default function RoundImportScreen() {
     // Validate
     const emptyHoles = scores.filter(s => s.strokes === '').length;
     if (emptyHoles > 0) {
-      Alert.alert('Missing scores', `Please fill in all ${totalHoles} hole scores.`);
+      Platform.OS === 'web' ? window.alert(`Please fill in all ${totalHoles} hole scores.`) : Alert.alert('Missing scores', `Please fill in all ${totalHoles} hole scores.`);
       return;
     }
     if (!selectedCourse || !selectedTee) {
-      Alert.alert('Missing info', 'Please select a course and tee.');
+      Platform.OS === 'web' ? window.alert('Please select a course and tee.') : Alert.alert('Missing info', 'Please select a course and tee.');
       return;
     }
 

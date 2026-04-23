@@ -73,14 +73,20 @@ export default function SessionScreen() {
   };
 
   const confirmDiscard = () => {
-    Alert.alert(
-      'Discard Session?',
-      'The timer and any drills you\'ve logged will be lost.',
-      [
-        { text: 'Keep Going', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => router.back() },
-      ]
-    );
+    if (Platform.OS === 'web') {
+      if (window.confirm('Discard Session?\n\nThe timer and any drills you\'ve logged will be lost.')) {
+        router.back();
+      }
+    } else {
+      Alert.alert(
+        'Discard Session?',
+        'The timer and any drills you\'ve logged will be lost.',
+        [
+          { text: 'Keep Going', style: 'cancel' },
+          { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+        ]
+      );
+    }
   };
 
   const saveSession = async () => {
