@@ -23,7 +23,7 @@ async function getFromSupabase<T>(table: string): Promise<T | null> {
       .from(table)
       .select('data')
       .eq('id', 'singleton')
-      .single();
+      .maybeSingle();
     if (error || !data) return null;
     return data.data as T;
   } catch (error) {
