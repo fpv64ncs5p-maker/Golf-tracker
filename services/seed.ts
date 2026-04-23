@@ -1,6 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ALL_COURSES, Course } from '../data/courses';
 import { DEFAULT_CLUB_DISTANCES, OLD_KEY_MAP } from '../data/clubs';
+import { getCourses, saveCourses, getClubDistances, saveClubDistances } from './storage';
 
 // List of old course names to remove during migration
 const OLD_COURSE_NAMES = [
@@ -11,36 +11,24 @@ const OLD_COURSE_NAMES = [
   'Gendersteyn — Blauwe lus',
 ];
 
-/**
- * Upsert a single course into the stored courses array.
- * Finds the course by id or name, updates if found, adds if not.
- * Preserves user-edited tee data.
- */
 async function upsertCourse(courseData: Course, storedCourses: Course[]): Promise<Course[]> {
   const existingIndex = storedCourses.findIndex(
     c => c.id === courseData.id || c.name === courseData.name
   );
 
   if (existingIndex >= 0) {
-    // Update existing course, preserve any user-edited tees
     return storedCourses.map((c, i) =>
       i === existingIndex
         ? { ...courseData, id: c.id, tees: { ...courseData.tees, ...c.tees } }
         : c
     );
   } else {
-    // Add new course
     return [...storedCourses, courseData];
   }
 }
 
-/**
- * Seed all courses to AsyncStorage.
- * Removes old duplicate entries, upserts all default courses while preserving user tee edits.
- */
 async function seedCourses(): Promise<void> {
-  const data = await AsyncStorage.getItem('courses');
-  let courses: Course[] = data ? JSON.parse(data) : [];
+  let courses = await getCourses();
 
   // Remove any old duplicate entries
   courses = courses.filter(c => !OLD_COURSE_NAMES.includes(c.name));
@@ -50,16 +38,11 @@ async function seedCourses(): Promise<void> {
     courses = await upsertCourse(courseData, courses);
   }
 
-  await AsyncStorage.setItem('courses', JSON.stringify(courses));
+  await saveCourses(courses);
 }
 
-/**
- * Seed default club distances to AsyncStorage.
- * Migrates old key names and merges with user data.
- */
 async function seedClubDistances(): Promise<void> {
-  const existing = await AsyncStorage.getItem('clubDistances');
-  const current = existing ? JSON.parse(existing) : {};
+  const current = await getClubDistances();
 
   // Migrate old full-name keys (e.g. '5 Wood' → '5W') if present
   const migrated: Record<string, any> = {};
@@ -70,13 +53,9 @@ async function seedClubDistances(): Promise<void> {
 
   // Merge: add default data only for clubs not already set by the user
   const merged = { ...DEFAULT_CLUB_DISTANCES, ...migrated };
-  await AsyncStorage.setItem('clubDistances', JSON.stringify(merged));
+  await saveClubDistances(merged);
 }
 
-/**
- * Initialize app data by seeding courses and club distances.
- * Call this once on app startup.
- */
 export async function initializeAppData(): Promise<void> {
   try {
     await seedCourses();
