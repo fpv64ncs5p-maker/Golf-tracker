@@ -1,50 +1,73 @@
-# Welcome to your Expo app 👋
+# ⛳ Golf Tracker — Jo's Personal Golf App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native + Expo app for tracking golf rounds, practice sessions, and progress over time. Built for personal use with Hollandsche Golfclub courses and Campo Real (Portugal).
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Log rounds** — hole-by-hole stroke tracking with club selection, shot direction, penalties, and putts
+- **My Courses** — organised by country (🇳🇱 Netherlands / 🇵🇹 Portugal) and club (Hollandsche Golfclub / Others), with per-tee CR & Slope ratings
+- **Course stats** — best score, average, times played, and recent rounds per course
+- **Round history** — view and edit saved rounds, with hole-by-hole breakdown and running total
+- **Hole progress strip** — visual strip during round logging showing completed holes with score vs par
+- **Insights** — WHS Training Handicap Index (calculated from qualifying rounds with CR & Slope), practice distribution, weakest areas, and recommendations
+- **Practice sessions** — log putting, short game, and long game sessions with drills and success rates
+- **Dashboard** — overview of all rounds and sessions with quick stats
 
-   ```bash
-   npm install
-   ```
+## Courses
 
-2. Start the app
+### 🇳🇱 Netherlands — Hollandsche Golfclub
+| Course | Holes | Tee | CR | Slope |
+|---|---|---|---|---|
+| Gendersteyn — Gele lus | 9 | Yellow | 36.1 | 132 |
+| Gendersteyn — Rode lus | 9 | Red | 35.4 | 129 |
+| De Loonsche Duynen | 18 | White/Yellow/Blue/Red/Orange | 72.7–65.2 | 131–107 |
+| De Kurenpolder | 18 | Yellow | 34.75 | 128 |
+| De Breuninkhof | 18 | Yellow | 36.5 | 137 |
+| De Berendonck | 18 | White | 72.0 | 132 |
+| De Haverleij | 18 | White | 70.7 | 131 |
+| Golfpark De Purmer (3 loops) | 9 each | — | — | — |
+| Westepark | 18 | Blue | 71.1 | 136 |
+| Almkreek | 18 | White | 71.5 | 128 |
+| ShortGolf Utrecht Par 3 | 9 | Yellow | 23 | 65 |
+| ShortGolf Utrecht Par 3 | 9 | Red | 24 | 68 |
+| ShortGolf Utrecht Par 3/4 | 9 | Yellow | 27 | 89 |
+| ShortGolf Utrecht Par 3/4 | 9 | Red | 28 | 89 |
 
-   ```bash
-   npx expo start
-   ```
+### 🇳🇱 Netherlands — Other
+| Course | Holes | Tee | CR | Slope |
+|---|---|---|---|---|
+| Kromme Rijn | 9 | White | — | — |
 
-In the output, you'll find options to open the app in a
+### 🇵🇹 Portugal
+| Course | Holes | Tee | CR | Slope |
+|---|---|---|---|---|
+| Campo Real | 18 | Black/White/Yellow/Blue/Red/Green/Purple | 71.5–59.1 | 136–110 |
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Handicap Calculation
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Uses the **World Handicap System (WHS)** formula:
 
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+Score Differential = (Gross Score − Course Rating) × 113 / Slope Rating
+Handicap Index = Average of best N differentials × 0.96
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Rounds on 9-hole courses have their differential doubled to convert to an 18-hole equivalent. The number of best differentials used scales with rounds played (per WHS table, up to 8 of the last 20).
 
-## Learn more
+Rounds automatically inherit CR & Slope from the course/tee when the rating isn't stored directly on the round (backwards compatible with rounds logged before ratings were added).
 
-To learn more about developing your project with Expo, look at the following resources:
+## Running the App
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm install
+npx expo start
+```
 
-## Join the community
+Scan the QR code with **Expo Go** on your phone, or run on an iOS/Android simulator.
 
-Join our community of developers creating universal apps.
+## Tech Stack
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- React Native + Expo (managed workflow)
+- Expo Router (file-based navigation)
+- AsyncStorage (local device storage — no backend)
+- TypeScript
