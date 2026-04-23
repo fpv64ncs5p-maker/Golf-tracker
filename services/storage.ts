@@ -1,12 +1,12 @@
 /**
  * Golf Tracker Storage Service
  *
- * Centralized, typed access to AsyncStorage with error handling and default values.
- * All getters return typed results safely, with graceful error handling.
- * All setters handle errors without throwing.
+ * Centralized, typed access to Supabase (cloud) with AsyncStorage fallback
+ * for draft round (transient, device-specific data).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from './supabase';
 import type {
   PracticeSession,
   Round,
@@ -15,124 +15,99 @@ import type {
   DraftRound,
 } from '../types';
 
-/**
- * Generic safe JSON getter with error handling
- * @param key - Storage key
- * @returns Typed value or null if not found or parse fails
- */
-async function getItem<T>(key: string): Promise<T | null> {
+// ── Generic Supabase helpers ────────────────────────────────────────────────
+
+async function getFromSupabase<T>(table: string): Promise<T | null> {
   try {
-    const value = await AsyncStorage.getItem(key);
-    if (value === null) return null;
-    return JSON.parse(value) as T;
+    const { data, error } = await supabase
+      .from(table)
+      .select('data')
+      .eq('id', 'singleton')
+      .single();
+    if (error || !data) return null;
+    return data.data as T;
   } catch (error) {
-    console.error(`[Storage] Error reading key "${key}":`, error);
+    console.error(`[Storage] Error reading "${table}":`, error);
     return null;
   }
 }
 
-/**
- * Generic safe JSON setter with error handling
- * @param key - Storage key
- * @param value - Value to store
- */
-async function setItem<T>(key: string, value: T): Promise<void> {
+async function saveToSupabase<T>(table: string, value: T): Promise<void> {
   try {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
+    await supabase
+      .from(table)
+      .upsert({ id: 'singleton', data: value }, { onConflict: 'id' });
   } catch (error) {
-    console.error(`[Storage] Error writing key "${key}":`, error);
+    console.error(`[Storage] Error writing "${table}":`, error);
   }
 }
 
-/**
- * Get all practice sessions
- * @returns Array of practice sessions, or empty array if none exist
- */
+// ── Sessions ────────────────────────────────────────────────────────────────
+
 export async function getSessions(): Promise<PracticeSession[]> {
-  const result = await getItem<PracticeSession[]>('sessions');
+  const result = await getFromSupabase<PracticeSession[]>('sessions');
   return result ?? [];
 }
 
-/**
- * Save practice sessions
- * @param sessions - Array of sessions to store
- */
 export async function saveSessions(sessions: PracticeSession[]): Promise<void> {
-  await setItem('sessions', sessions);
+  await saveToSupabase('sessions', sessions);
 }
 
-/**
- * Get all completed rounds
- * @returns Array of rounds, or empty array if none exist
- */
+// ── Rounds ──────────────────────────────────────────────────────────────────
+
 export async function getRounds(): Promise<Round[]> {
-  const result = await getItem<Round[]>('rounds');
+  const result = await getFromSupabase<Round[]>('rounds');
   return result ?? [];
 }
 
-/**
- * Save all rounds
- * @param rounds - Array of rounds to store
- */
 export async function saveRounds(rounds: Round[]): Promise<void> {
-  await setItem('rounds', rounds);
+  await saveToSupabase('rounds', rounds);
 }
 
-/**
- * Get all courses
- * @returns Array of courses, or empty array if none exist
- */
+// ── Courses ─────────────────────────────────────────────────────────────────
+
 export async function getCourses(): Promise<Course[]> {
-  const result = await getItem<Course[]>('courses');
+  const result = await getFromSupabase<Course[]>('courses');
   return result ?? [];
 }
 
-/**
- * Save all courses
- * @param courses - Array of courses to store
- */
 export async function saveCourses(courses: Course[]): Promise<void> {
-  await setItem('courses', courses);
+  await saveToSupabase('courses', courses);
 }
 
-/**
- * Get club distance reference data
- * @returns Object with club names as keys, or empty object if none exist
- */
+// ── Club Distances ───────────────────────────────────────────────────────────
+
 export async function getClubDistances(): Promise<Record<string, ClubDistance>> {
-  const result = await getItem<Record<string, ClubDistance>>('clubDistances');
+  const result = await getFromSupabase<Record<string, ClubDistance>>('club_distances');
   return result ?? {};
 }
 
-/**
- * Save club distance reference data
- * @param data - Object with club distance data
- */
 export async function saveClubDistances(
   data: Record<string, ClubDistance>
 ): Promise<void> {
-  await setItem('clubDistances', data);
+  await saveToSupabase('club_distances', data);
 }
 
-/**
- * Get the current draft round (round in progress)
- * @returns Draft round or null if not in progress
- */
+// ── Draft Round (stays local — transient data) ───────────────────────────────
+
 export async function getDraftRound(): Promise<DraftRound | null> {
-  return await getItem<DraftRound>('draftRound');
+  try {
+    const value = await AsyncStorage.getItem('draftRound');
+    if (value === null) return null;
+    return JSON.parse(value) as DraftRound;
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Save a draft round
- * @param draft - Draft round to store
- */
 export async function saveDraftRound(draft: DraftRound): Promise<void> {
-  await setItem('draftRound', draft);
+  try {
+    await AsyncStorage.setItem('draftRound', JSON.stringify(draft));
+  } catch (error) {
+    console.error('[Storage] Error saving draft round:', error);
+  }
 }
 
-/**
- * Clear the draft round (typically after saving a completed round)
- */
 export async function clearDraftRound(): Promise<void> {
   try {
     await AsyncStorage.removeItem('draftRound');
