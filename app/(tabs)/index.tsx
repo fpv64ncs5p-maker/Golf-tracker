@@ -11,7 +11,7 @@ export default function StartScreen() {
     initializeAppData();
   }, []);
 
-  const types = ["Putting", "Short Game", "Long Game"];
+  const types = ["Putting", "Chipping", "Pitching", "Long Game"];
 
   return (
     <ScrollView style={styles.container}>

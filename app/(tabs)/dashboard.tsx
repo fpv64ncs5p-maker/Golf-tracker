@@ -119,7 +119,7 @@ export default function DashboardScreen() {
   const practiceStats = () => {
     const total = sessions.length;
     const totalTime = sessions.reduce((sum: number, s: PracticeSession) => sum + s.duration, 0);
-    const typeCount: Record<string, number> = { Putting: 0, 'Short Game': 0, 'Long Game': 0 };
+    const typeCount: Record<string, number> = { Putting: 0, Chipping: 0, Pitching: 0, 'Long Game': 0, 'Short Game': 0 };
     sessions.forEach((s: PracticeSession) => { if (typeCount[s.type] !== undefined) typeCount[s.type]++; });
     return { total, totalTime, typeCount };
   };
@@ -176,7 +176,9 @@ export default function DashboardScreen() {
       {activeTab === 'practice' && (
         <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
           <View style={styles.statsBox}>
-            <Text style={styles.statText}>Putting: {ps.typeCount.Putting}  ·  Short Game: {ps.typeCount['Short Game']}  ·  Long Game: {ps.typeCount['Long Game']}</Text>
+            <Text style={styles.statText}>
+              Putting: {ps.typeCount.Putting}  ·  Chipping: {ps.typeCount.Chipping}  ·  Pitching: {ps.typeCount.Pitching}  ·  Long Game: {ps.typeCount['Long Game']}
+            </Text>
           </View>
 
           {sessions.length === 0 ? (
@@ -199,10 +201,15 @@ export default function DashboardScreen() {
                       <Text style={styles.cardType}>{item.type}</Text>
                       <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
                     </View>
-                    <Text style={styles.cardDetail}>⏱ {formatTime(item.duration)}  ·  🎯 {item.drills.length} drills</Text>
-                    {item.drills.length > 0 && (
+                    <Text style={styles.cardDetail}>⏱ {formatTime(item.duration)}  ·  🎯 {(item.drills?.length ?? 0) + (item.proximityDrills?.length ?? 0)} drills</Text>
+                    {(item.drills?.length > 0) && (
                       <Text style={styles.cardDrills}>
                         {item.drills.map((d) => `${d.name} ${d.success}%`).join('  ·  ')}
+                      </Text>
+                    )}
+                    {(item.proximityDrills?.length ?? 0) > 0 && (
+                      <Text style={styles.cardDrills}>
+                        {item.proximityDrills!.map((d) => `${d.name} ${d.success}%↓2m`).join('  ·  ')}
                       </Text>
                     )}
                     {item.notes ? (

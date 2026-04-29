@@ -44,34 +44,51 @@ export default function InsightsScreen() {
   const calcPracticeStats = () => {
     if (sessions.length === 0) return null;
     let totalTime = 0;
-    let typeCount: Record<string, number> = { Putting: 0, 'Short Game': 0, 'Long Game': 0 };
-    let typeDrills: Record<string, { made: number; attempts: number }> = { Putting: { made: 0, attempts: 0 }, 'Short Game': { made: 0, attempts: 0 }, 'Long Game': { made: 0, attempts: 0 } };
+    let typeCount: Record<string, number> = { Putting: 0, Chipping: 0, Pitching: 0, 'Long Game': 0, 'Short Game': 0 };
+
+    // Track success scores per type to find weakest
+    // Standard types: aggregate made/attempts; Proximity types: average success %
+    let typeScores: Record<string, { totalSuccess: number; count: number }> = {
+      Putting: { totalSuccess: 0, count: 0 },
+      Chipping: { totalSuccess: 0, count: 0 },
+      Pitching: { totalSuccess: 0, count: 0 },
+      'Long Game': { totalSuccess: 0, count: 0 },
+      'Short Game': { totalSuccess: 0, count: 0 },
+    };
 
     sessions.forEach((s: PracticeSession) => {
       totalTime += s.duration;
       if (typeCount[s.type] !== undefined) typeCount[s.type]++;
-      s.drills.forEach((d) => {
-        if (d.made && d.attempts && typeDrills[s.type]) {
-          typeDrills[s.type].made += parseInt(d.made);
-          typeDrills[s.type].attempts += parseInt(d.attempts);
+      // Standard drills
+      s.drills?.forEach((d) => {
+        if (d.made && d.attempts && typeScores[s.type]) {
+          typeScores[s.type].totalSuccess += d.success;
+          typeScores[s.type].count++;
+        }
+      });
+      // Proximity drills
+      s.proximityDrills?.forEach((d) => {
+        if (typeScores[s.type]) {
+          typeScores[s.type].totalSuccess += d.success;
+          typeScores[s.type].count++;
         }
       });
     });
 
     let weakest = 'N/A';
     let weakestScore = 101;
-    Object.keys(typeDrills).forEach(t => {
-      const { made, attempts } = typeDrills[t];
-      if (attempts > 0) {
-        const rate = Math.round((made / attempts) * 100);
+    Object.keys(typeScores).forEach(t => {
+      const { totalSuccess, count } = typeScores[t];
+      if (count > 0) {
+        const rate = Math.round(totalSuccess / count);
         if (rate < weakestScore) { weakestScore = rate; weakest = t; }
       }
     });
 
     const mostPracticed = Object.keys(typeCount).reduce((a, b) => typeCount[a] > typeCount[b] ? a : b);
-    let totalMade = 0, totalAttempts = 0;
-    Object.values(typeDrills).forEach(({ made, attempts }) => { totalMade += made; totalAttempts += attempts; });
-    const overallSuccess = totalAttempts > 0 ? Math.round((totalMade / totalAttempts) * 100) : 0;
+    let totalSuccess = 0, totalDrillCount = 0;
+    Object.values(typeScores).forEach(({ totalSuccess: ts, count }) => { totalSuccess += ts; totalDrillCount += count; });
+    const overallSuccess = totalDrillCount > 0 ? Math.round(totalSuccess / totalDrillCount) : 0;
 
     return { totalTime, typeCount, weakest, weakestScore, mostPracticed, overallSuccess };
   };
@@ -293,6 +310,10 @@ export default function InsightsScreen() {
     let baseRec = '';
     if (stats.weakest === 'Putting') {
       baseRec = 'Spend 40% of your next session on short putts (1–2m). Focus on consistent tempo. Also: lag putting 8m+ (2-putt target only).';
+    } else if (stats.weakest === 'Chipping') {
+      baseRec = 'Work on getting chips inside 2m. Start close (5m) and build distance. Focus on landing spot consistency rather than swing power.';
+    } else if (stats.weakest === 'Pitching') {
+      baseRec = 'Focus on distance control in pitching. Try 10 shots each at 30m, 40m, 50m — aim for 80% inside 2m at each distance.';
     } else if (stats.weakest === 'Short Game') {
       baseRec = 'Work on chip-and-run shots (SW) and up-and-downs. Aim for 10 attempts per drill. Review: bunker saves with SW (chip clean, don\'t splash).';
     } else if (stats.weakest === 'Long Game') {
@@ -478,7 +499,8 @@ export default function InsightsScreen() {
           <View style={styles.card}>
             <Text style={styles.heading}>📈 Practice Distribution</Text>
             <Text style={styles.body}>Putting: {stats.typeCount.Putting} sessions</Text>
-            <Text style={styles.body}>Short Game: {stats.typeCount['Short Game']} sessions</Text>
+            <Text style={styles.body}>Chipping: {stats.typeCount.Chipping} sessions</Text>
+            <Text style={styles.body}>Pitching: {stats.typeCount.Pitching} sessions</Text>
             <Text style={styles.body}>Long Game: {stats.typeCount['Long Game']} sessions</Text>
           </View>
 

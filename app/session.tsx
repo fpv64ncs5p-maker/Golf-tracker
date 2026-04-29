@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions } from '../services/storage';
-import type { PracticeSession, Drill } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, ProximityBuckets } from '../types';
 
-// Pre-loaded drills from your practice routines
-const SUGGESTED_DRILLS: Record<string, { name: string; attempts: string }[]> = {
+// ── Suggested drills by session type ──────────────────────────────────────────
+
+const STANDARD_DRILLS: Record<string, { name: string; attempts: string }[]> = {
   Putting: [
     { name: 'Short Putts 1m', attempts: '25' },
     { name: 'Short Putts 2m', attempts: '15' },
@@ -13,12 +14,6 @@ const SUGGESTED_DRILLS: Record<string, { name: string; attempts: string }[]> = {
     { name: 'Lag Putting 9m', attempts: '10' },
     { name: 'Lag Putting 12m', attempts: '10' },
     { name: 'Pressure Ladder', attempts: '10' },
-  ],
-  'Short Game': [
-    { name: 'Basic Chips', attempts: '10' },
-    { name: 'Pitch Shots Low', attempts: '10' },
-    { name: 'Pitch Shots High', attempts: '10' },
-    { name: 'Up & Down Challenge', attempts: '10' },
   ],
   'Long Game': [
     { name: 'Wedge 45m', attempts: '10' },
@@ -32,22 +27,44 @@ const SUGGESTED_DRILLS: Record<string, { name: string; attempts: string }[]> = {
   ],
 };
 
+const PROXIMITY_DRILLS: Record<string, string[]> = {
+  Chipping: ['Chip 5m', 'Chip 10m', 'Chip 15m', 'Chip 20m', 'Chip 30m'],
+  Pitching: ['Pitch 20m', 'Pitch 30m', 'Pitch 40m', 'Pitch 50m', 'Pitch 60m', 'Pitch 70m'],
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const isProximityType = (type: string) => type === 'Chipping' || type === 'Pitching';
+
+const calcSuccess = (buckets: ProximityBuckets, total: number) => {
+  if (total === 0) return 0;
+  return Math.round(((buckets.inside1m + buckets.one2m) / total) * 100);
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function SessionScreen() {
   const { type } = useLocalSearchParams();
   const sessionType = typeof type === 'string' ? type : '';
+  const proximity = isProximityType(sessionType);
+
   const [seconds, setSeconds] = useState(0);
+  const [notes, setNotes] = useState('');
+
+  // Standard drill state (Putting / Long Game)
   const [drillName, setDrillName] = useState('');
   const [made, setMade] = useState('');
   const [attempts, setAttempts] = useState('');
   const [drills, setDrills] = useState<Drill[]>([]);
-  const [notes, setNotes] = useState('');
 
-  const suggestions = SUGGESTED_DRILLS[sessionType] ?? [];
+  // Proximity drill state (Chipping / Pitching)
+  const [proxDrillName, setProxDrillName] = useState('');
+  const [buckets, setBuckets] = useState<ProximityBuckets>({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
+  const [proxDrills, setProxDrills] = useState<ProximityDrill[]>([]);
 
+  // Timer
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSeconds(s => s + 1);
-    }, 1000);
+    const interval = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -57,13 +74,15 @@ export default function SessionScreen() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const selectSuggestion = (drill: { name: string; attempts: string }) => {
+  // ── Standard drill handlers ────────────────────────────────────────────────
+
+  const selectStandardSuggestion = (drill: { name: string; attempts: string }) => {
     setDrillName(drill.name);
     setAttempts(drill.attempts);
-    setMade(''); // clear made so user fills it in
+    setMade('');
   };
 
-  const addDrill = () => {
+  const addStandardDrill = () => {
     if (!drillName || !made || !attempts) return;
     const success = Math.round((parseInt(made) / parseInt(attempts)) * 100);
     setDrills([...drills, { name: drillName, made, attempts, success }]);
@@ -71,6 +90,35 @@ export default function SessionScreen() {
     setMade('');
     setAttempts('');
   };
+
+  // ── Proximity drill handlers ───────────────────────────────────────────────
+
+  const selectProxSuggestion = (name: string) => {
+    setProxDrillName(name);
+    setBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
+  };
+
+  const setBucket = (key: keyof ProximityBuckets, val: string) => {
+    const n = parseInt(val) || 0;
+    setBuckets(prev => ({ ...prev, [key]: n }));
+  };
+
+  const proxTotal = buckets.inside1m + buckets.one2m + buckets.two3m + buckets.beyond3m;
+  const proxSuccess = calcSuccess(buckets, proxTotal);
+
+  const addProxDrill = () => {
+    if (!proxDrillName || proxTotal === 0) return;
+    setProxDrills([...proxDrills, {
+      name: proxDrillName,
+      attempts: proxTotal,
+      buckets: { ...buckets },
+      success: proxSuccess,
+    }]);
+    setProxDrillName('');
+    setBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
+  };
+
+  // ── Save / Discard ─────────────────────────────────────────────────────────
 
   const confirmDiscard = () => {
     if (Platform.OS === 'web') {
@@ -92,9 +140,10 @@ export default function SessionScreen() {
   const saveSession = async () => {
     try {
       const newSession: PracticeSession = {
-        type: sessionType as 'Putting' | 'Short Game' | 'Long Game',
+        type: sessionType as PracticeSession['type'],
         duration: seconds,
-        drills,
+        drills: proximity ? [] : drills,
+        proximityDrills: proximity ? proxDrills : undefined,
         notes,
         date: new Date().toISOString(),
       };
@@ -107,13 +156,18 @@ export default function SessionScreen() {
     }
   };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const standardSuggestions = STANDARD_DRILLS[sessionType] ?? [];
+  const proxSuggestions = PROXIMITY_DRILLS[sessionType] ?? [];
+
   return (
     <KeyboardAvoidingView
       style={styles.wrapper}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}>
-
-      {/* Top section — scrollable list of logged drills */}
+      keyboardVerticalOffset={90}
+    >
+      {/* Top section — logged drills list */}
       <View style={styles.topSection}>
         <View style={styles.sessionHeader}>
           <Text style={styles.type}>{sessionType} Session</Text>
@@ -124,73 +178,157 @@ export default function SessionScreen() {
         <Text style={styles.timer}>{formatTime()}</Text>
 
         <ScrollView>
-          {drills.length === 0 ? (
-            <Text style={styles.empty}>No drills yet — pick one below or type your own</Text>
+          {proximity ? (
+            proxDrills.length === 0 ? (
+              <Text style={styles.empty}>No drills yet — pick a distance below or type your own</Text>
+            ) : (
+              proxDrills.map((item, i) => (
+                <View key={i} style={styles.drillItem}>
+                  <Text style={styles.drillName}>{item.name}</Text>
+                  <View style={styles.drillScoreCol}>
+                    <Text style={styles.drillScore}>{item.success}% inside 2m</Text>
+                    <Text style={styles.drillBuckets}>
+                      ≤1m:{item.buckets.inside1m}  1–2m:{item.buckets.one2m}  2–3m:{item.buckets.two3m}  3m+:{item.buckets.beyond3m}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )
           ) : (
-            drills.map((item, i) => (
-              <View key={i} style={styles.drillItem}>
-                <Text style={styles.drillName}>{item.name}</Text>
-                <Text style={styles.drillScore}>{item.made}/{item.attempts} ({item.success}%)</Text>
-              </View>
-            ))
+            drills.length === 0 ? (
+              <Text style={styles.empty}>No drills yet — pick one below or type your own</Text>
+            ) : (
+              drills.map((item, i) => (
+                <View key={i} style={styles.drillItem}>
+                  <Text style={styles.drillName}>{item.name}</Text>
+                  <Text style={styles.drillScore}>{item.made}/{item.attempts} ({item.success}%)</Text>
+                </View>
+              ))
+            )
           )}
         </ScrollView>
       </View>
 
-      {/* Bottom section — pinned above keyboard */}
+      {/* Bottom section — pinned input area */}
       <View style={styles.bottomSection}>
 
-        {/* Suggested drill chips */}
-        {suggestions.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipsScroll}
-            contentContainerStyle={styles.chipsContainer}
-          >
-            {suggestions.map((drill) => {
-              const isSelected = drillName === drill.name;
-              return (
-                <TouchableOpacity
-                  key={drill.name}
-                  style={[styles.chip, isSelected && styles.chipSelected]}
-                  onPress={() => selectSuggestion(drill)}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {drill.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+        {proximity ? (
+          <>
+            {/* Proximity drill chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipsScroll}
+              contentContainerStyle={styles.chipsContainer}
+            >
+              {proxSuggestions.map((name) => {
+                const isSelected = proxDrillName === name;
+                return (
+                  <TouchableOpacity
+                    key={name}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                    onPress={() => selectProxSuggestion(name)}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>{name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Drill name */}
+            <TextInput
+              placeholder="Drill name (e.g. Chip 10m)"
+              value={proxDrillName}
+              onChangeText={setProxDrillName}
+              style={[styles.input, { marginBottom: 8 }]}
+            />
+
+            {/* Bucket inputs */}
+            <View style={styles.bucketRow}>
+              {([
+                { key: 'inside1m', label: '≤1m' },
+                { key: 'one2m',    label: '1–2m' },
+                { key: 'two3m',    label: '2–3m' },
+                { key: 'beyond3m', label: '3m+' },
+              ] as { key: keyof ProximityBuckets; label: string }[]).map(({ key, label }) => (
+                <View key={key} style={styles.bucketItem}>
+                  <Text style={styles.bucketLabel}>{label}</Text>
+                  <TextInput
+                    value={buckets[key] === 0 ? '' : String(buckets[key])}
+                    onChangeText={val => setBucket(key, val)}
+                    keyboardType="numeric"
+                    style={styles.bucketInput}
+                    placeholder="0"
+                  />
+                </View>
+              ))}
+            </View>
+
+            {/* Live preview */}
+            {proxTotal > 0 && (
+              <Text style={styles.proxPreview}>
+                {proxTotal} shots · {proxSuccess}% inside 2m
+              </Text>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Standard drill chips */}
+            {standardSuggestions.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.chipsScroll}
+                contentContainerStyle={styles.chipsContainer}
+              >
+                {standardSuggestions.map((drill) => {
+                  const isSelected = drillName === drill.name;
+                  return (
+                    <TouchableOpacity
+                      key={drill.name}
+                      style={[styles.chip, isSelected && styles.chipSelected]}
+                      onPress={() => selectStandardSuggestion(drill)}
+                    >
+                      <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                        {drill.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {/* Standard input row */}
+            <View style={styles.inputRow}>
+              <TextInput
+                placeholder="Drill name"
+                value={drillName}
+                onChangeText={setDrillName}
+                style={[styles.input, styles.inputWide]}
+                returnKeyType="next"
+              />
+              <TextInput
+                placeholder="Made"
+                value={made}
+                onChangeText={setMade}
+                keyboardType="numeric"
+                style={[styles.input, styles.inputSmall]}
+              />
+              <TextInput
+                placeholder="Total"
+                value={attempts}
+                onChangeText={setAttempts}
+                keyboardType="numeric"
+                style={[styles.input, styles.inputSmall]}
+              />
+            </View>
+          </>
         )}
 
-        {/* Input row */}
-        <View style={styles.inputRow}>
-          <TextInput
-            placeholder="Drill name"
-            value={drillName}
-            onChangeText={setDrillName}
-            style={[styles.input, styles.inputWide]}
-            returnKeyType="next"
-          />
-          <TextInput
-            placeholder="Made"
-            value={made}
-            onChangeText={setMade}
-            keyboardType="numeric"
-            style={[styles.input, styles.inputSmall]}
-          />
-          <TextInput
-            placeholder="Total"
-            value={attempts}
-            onChangeText={setAttempts}
-            keyboardType="numeric"
-            style={[styles.input, styles.inputSmall]}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.addButton} onPress={addDrill}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={proximity ? addProxDrill : addStandardDrill}
+        >
           <Text style={styles.addText}>+ Add Drill</Text>
         </TouchableOpacity>
 
@@ -208,7 +346,6 @@ export default function SessionScreen() {
           <Text style={styles.endText}>End & Save Session</Text>
         </TouchableOpacity>
       </View>
-
     </KeyboardAvoidingView>
   );
 }
@@ -222,33 +359,33 @@ const styles = StyleSheet.create({
   discardText: { fontSize: 13, color: '#999', fontWeight: '500' },
   timer: { fontSize: 52, fontWeight: 'bold', textAlign: 'center', marginVertical: 16, color: '#4CAF50' },
   empty: { textAlign: 'center', color: '#bbb', marginTop: 20, fontSize: 14, paddingHorizontal: 10 },
-  drillItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  drillItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   drillName: { fontSize: 16, color: '#333', flex: 1, flexWrap: 'wrap' },
   drillScore: { fontSize: 15, color: '#4CAF50', fontWeight: '600' },
+  drillScoreCol: { alignItems: 'flex-end' },
+  drillBuckets: { fontSize: 11, color: '#999', marginTop: 2 },
 
   bottomSection: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
 
   chipsScroll: { marginBottom: 10, overflow: 'scroll' as any },
   chipsContainer: { flexDirection: 'row', gap: 8, paddingVertical: 4, paddingHorizontal: 2 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#f0f4f0',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  chipSelected: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
-  },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f0f4f0', borderRadius: 20, borderWidth: 1, borderColor: '#ddd' },
+  chipSelected: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
   chipText: { fontSize: 13, color: '#555' },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
 
-  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 10, width: '100%', flexWrap: 'wrap' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, backgroundColor: '#fafafa' },
-  inputWide: { flex: 2 },
-  inputSmall: { flex: 1 },
+  inputRow: { flexDirection: 'row', gap: 6, marginBottom: 10, width: '100%' },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 10, fontSize: 14, backgroundColor: '#fafafa' },
+  inputWide: { flex: 3 },
+  inputSmall: { width: 58 },
+
+  // Proximity bucket grid
+  bucketRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  bucketItem: { flex: 1, alignItems: 'center' },
+  bucketLabel: { fontSize: 11, fontWeight: '700', color: '#555', marginBottom: 4 },
+  bucketInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 8, fontSize: 16, backgroundColor: '#fafafa', textAlign: 'center', width: '100%' },
+  proxPreview: { fontSize: 13, color: '#4CAF50', fontWeight: '600', textAlign: 'center', marginBottom: 8 },
+
   notesInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 10, fontSize: 14, backgroundColor: '#fafafa', marginBottom: 10, minHeight: 44 },
   addButton: { backgroundColor: '#4CAF50', padding: 14, borderRadius: 10, marginBottom: 10 },
   addText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 15 },

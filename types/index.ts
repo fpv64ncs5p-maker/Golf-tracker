@@ -37,7 +37,7 @@ export interface Course {
 }
 
 /**
- * A single drill tracked during a practice session
+ * A single drill tracked during a practice session (Putting / Long Game)
  */
 export interface Drill {
   name: string;
@@ -47,14 +47,35 @@ export interface Drill {
 }
 
 /**
- * A practice session (putting, short game, or long game)
+ * Proximity outcome buckets for a short-game drill
+ */
+export interface ProximityBuckets {
+  inside1m: number;  // ≤1m from flag
+  one2m: number;     // 1–2m
+  two3m: number;     // 2–3m
+  beyond3m: number;  // 3m+
+}
+
+/**
+ * A single drill tracked during a Chipping or Pitching session
+ */
+export interface ProximityDrill {
+  name: string;           // e.g. "Chip 10m"
+  attempts: number;       // total shots
+  buckets: ProximityBuckets;
+  success: number;        // % of shots inside 2m
+}
+
+/**
+ * A practice session (putting, short game, long game, chipping, or pitching)
  */
 export interface PracticeSession {
-  type: 'Putting' | 'Short Game' | 'Long Game';
+  type: 'Putting' | 'Short Game' | 'Long Game' | 'Chipping' | 'Pitching';
   duration: number;
   date: string;
   notes: string;
   drills: Drill[];
+  proximityDrills?: ProximityDrill[];
 }
 
 /**
