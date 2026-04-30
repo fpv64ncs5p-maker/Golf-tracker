@@ -32,6 +32,8 @@ const PROXIMITY_DRILLS: Record<string, string[]> = {
   Pitching: ['Pitch 20m', 'Pitch 30m', 'Pitch 40m', 'Pitch 50m', 'Pitch 60m', 'Pitch 70m'],
 };
 
+const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const isProximityType = (type: string) => type === 'Chipping' || type === 'Pitching';
@@ -59,6 +61,7 @@ export default function SessionScreen() {
 
   // Proximity drill state (Chipping / Pitching)
   const [proxDrillName, setProxDrillName] = useState('');
+  const [proxClub, setProxClub] = useState<string | null>(null);
   const [buckets, setBuckets] = useState<ProximityBuckets>({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
   const [proxDrills, setProxDrills] = useState<ProximityDrill[]>([]);
 
@@ -96,6 +99,7 @@ export default function SessionScreen() {
   const selectProxSuggestion = (name: string) => {
     setProxDrillName(name);
     setBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
+    setProxClub(null);
   };
 
   const setBucket = (key: keyof ProximityBuckets, val: string) => {
@@ -113,8 +117,10 @@ export default function SessionScreen() {
       attempts: proxTotal,
       buckets: { ...buckets },
       success: proxSuccess,
+      club: proxClub ?? undefined,
     }]);
     setProxDrillName('');
+    setProxClub(null);
     setBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
   };
 
@@ -175,7 +181,6 @@ export default function SessionScreen() {
             <Text style={styles.discardText}>✕ Discard</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.timer}>{formatTime()}</Text>
 
         <ScrollView>
           {proximity ? (
@@ -184,7 +189,10 @@ export default function SessionScreen() {
             ) : (
               proxDrills.map((item, i) => (
                 <View key={i} style={styles.drillItem}>
-                  <Text style={styles.drillName}>{item.name}</Text>
+                  <View style={styles.drillNameCol}>
+                    <Text style={styles.drillName}>{item.name}</Text>
+                    {item.club && <Text style={styles.drillClub}>{item.club}</Text>}
+                  </View>
                   <View style={styles.drillScoreCol}>
                     <Text style={styles.drillScore}>{item.success}% inside 2m</Text>
                     <Text style={styles.drillBuckets}>
@@ -242,6 +250,28 @@ export default function SessionScreen() {
               onChangeText={setProxDrillName}
               style={[styles.input, { marginBottom: 8 }]}
             />
+
+            {/* Club selector */}
+            <Text style={styles.clubSelectorLabel}>Club (optional)</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipsScroll}
+              contentContainerStyle={[styles.chipsContainer, { marginBottom: 8 }]}
+            >
+              {SHORT_GAME_CLUBS.map((club) => {
+                const isSelected = proxClub === club;
+                return (
+                  <TouchableOpacity
+                    key={club}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                    onPress={() => setProxClub(isSelected ? null : club)}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>{club}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
 
             {/* Bucket inputs */}
             <View style={styles.bucketRow}>
@@ -362,8 +392,11 @@ const styles = StyleSheet.create({
   drillItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   drillName: { fontSize: 16, color: '#333', flex: 1, flexWrap: 'wrap' },
   drillScore: { fontSize: 15, color: '#4CAF50', fontWeight: '600' },
+  drillNameCol: { flex: 1 },
+  drillClub: { fontSize: 12, color: '#4CAF50', fontWeight: '600', marginTop: 2 },
   drillScoreCol: { alignItems: 'flex-end' },
   drillBuckets: { fontSize: 11, color: '#999', marginTop: 2 },
+  clubSelectorLabel: { fontSize: 12, fontWeight: '700', color: '#555', marginBottom: 6 },
 
   bottomSection: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
 

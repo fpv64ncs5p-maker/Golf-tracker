@@ -64,6 +64,7 @@ export interface ProximityDrill {
   attempts: number;       // total shots
   buckets: ProximityBuckets;
   success: number;        // % of shots inside 2m
+  club?: string;          // optional club used (e.g. "SW", "PW")
 }
 
 /**

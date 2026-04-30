@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, Alert, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getDraftRound, saveDraftRound, getClubDistances } from '../services/storage';
 import type { Stroke, HoleData, DraftRound, ClubDistance } from '../types';
@@ -200,16 +200,18 @@ export default function RoundHoleScreen() {
 
   const confirmExitRound = () => {
     if (Platform.OS === 'web') {
-      if (window.confirm('Exit Round?\n\nYour progress so far is saved, but the current hole will not be. Are you sure you want to leave?')) {
-        router.push('/');
+      const choice = window.confirm('Finish & Save round with holes logged so far?\n\nOK = Finish & Save  |  Cancel = Keep Playing');
+      if (choice) {
+        router.push('/round-complete');
       }
     } else {
       Alert.alert(
-        'Exit Round?',
-        'Your progress so far is saved, but the current hole will not be. Are you sure you want to leave?',
+        'What would you like to do?',
+        'Your holes logged so far are saved.',
         [
           { text: 'Keep Playing', style: 'cancel' },
-          { text: 'Exit', style: 'destructive', onPress: () => router.push('/') },
+          { text: 'Finish & Save Now', onPress: () => router.push('/round-complete') },
+          { text: 'Exit (continue later)', style: 'destructive', onPress: () => router.push('/') },
         ]
       );
     }
