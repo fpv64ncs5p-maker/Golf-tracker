@@ -410,22 +410,34 @@ export default function RoundHoleScreen() {
             </>
           )}
 
-          {/* Step 2: Direction */}
+          {/* Step 2: Direction — compass grid */}
           {pickerStep === 'direction' && (
             <>
               <Text style={styles.pickerTitle}>
                 {isTeeShotNext ? `Tee Shot — ${pendingClub}` : `Shot Result — ${pendingClub}`}
               </Text>
-              <TouchableOpacity style={[styles.dirBtnFull, styles.dirTarget]} onPress={() => selectDirection(targetLabel)}>
-                <Text style={styles.dirBtnFullText}>✅ {targetLabel}</Text>
-              </TouchableOpacity>
-              <View style={styles.dirRow}>
-                {['Left', 'Right', 'Short', 'Long'].map(dir => (
-                  <TouchableOpacity key={dir} style={styles.dirMissBtn} onPress={() => selectDirection(dir)}>
-                    <Text style={styles.dirMissBtnText}>{dir}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {[
+                ['Short Left', 'Short', 'Short Right'],
+                ['Left',       targetLabel,   'Right'],
+                ['Long Left',  'Long',  'Long Right'],
+              ].map((row, ri) => (
+                <View key={ri} style={styles.compassRow}>
+                  {row.map((cell) => {
+                    const isTarget = cell === targetLabel;
+                    return (
+                      <TouchableOpacity
+                        key={cell}
+                        style={[styles.compassCell, isTarget && styles.compassCellTarget]}
+                        onPress={() => selectDirection(isTarget ? targetLabel : cell)}
+                      >
+                        <Text style={[styles.compassCellText, isTarget && styles.compassCellTextTarget]}>
+                          {isTarget ? `✅ ${cell}` : cell}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </>
           )}
 
@@ -602,7 +614,13 @@ const styles = StyleSheet.create({
   caddieClubDistAlt: { color: '#1565C0' },
   caddieOr: { fontSize: 12, color: '#1565C0', fontStyle: 'italic' },
   caddieNote: { fontSize: 12, color: '#1565C0', marginTop: 8, fontStyle: 'italic' },
-  // Direction
+  // Direction — compass grid
+  compassRow: { flexDirection: 'row', gap: 6, marginBottom: 6 },
+  compassCell: { flex: 1, paddingVertical: 14, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  compassCellTarget: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
+  compassCellText: { fontSize: 12, fontWeight: '600', color: '#333', textAlign: 'center' },
+  compassCellTextTarget: { color: '#fff', fontSize: 13 },
+  // Keep these for putt direction (still uses old row style)
   dirBtnFull: { width: '100%', padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 10 },
   dirBtnFullText: { fontSize: 16, color: '#fff', fontWeight: 'bold' },
   dirTarget: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },

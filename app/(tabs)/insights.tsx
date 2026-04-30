@@ -175,11 +175,14 @@ export default function InsightsScreen() {
       if (!map[s.club]) map[s.club] = { count: 0, onTarget: 0, left: 0, right: 0, short: 0, long: 0, penalties: 0 };
       map[s.club].count++;
       const d = s.direction;
-      if (d === 'Fairway' || d === 'Green' || d === 'On Target') map[s.club].onTarget++;
-      else if (d === 'Left') map[s.club].left++;
-      else if (d === 'Right') map[s.club].right++;
-      else if (d === 'Short') map[s.club].short++;
-      else if (d === 'Long') map[s.club].long++;
+      if (d === 'Fairway' || d === 'Green' || d === 'On Target') {
+        map[s.club].onTarget++;
+      } else {
+        if (d.includes('Left')) map[s.club].left++;
+        if (d.includes('Right')) map[s.club].right++;
+        if (d.includes('Short')) map[s.club].short++;
+        if (d.includes('Long')) map[s.club].long++;
+      }
       if (s.penalty) map[s.club].penalties++;
     });
 
@@ -208,10 +211,11 @@ export default function InsightsScreen() {
     const nonPuttStrokes = allStrokes.filter(s => s.club !== 'Putter');
     let totalLeft = 0, totalRight = 0, totalShort = 0, totalLong = 0;
     nonPuttStrokes.forEach((s) => {
-      if (s.direction === 'Left') totalLeft++;
-      if (s.direction === 'Right') totalRight++;
-      if (s.direction === 'Short') totalShort++;
-      if (s.direction === 'Long') totalLong++;
+      const d = s.direction;
+      if (d.includes('Left')) totalLeft++;
+      if (d.includes('Right')) totalRight++;
+      if (d.includes('Short')) totalShort++;
+      if (d.includes('Long')) totalLong++;
     });
 
     const missTendency = (() => {
