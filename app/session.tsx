@@ -62,7 +62,7 @@ export default function SessionScreen() {
   // Proximity drill state (Chipping / Pitching)
   const [proxDrillName, setProxDrillName] = useState('');
   const [proxClub, setProxClub] = useState<string | null>(null);
-  const [buckets, setBuckets] = useState<ProximityBuckets>({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
+  const [buckets, setBuckets] = useState<ProximityBuckets>({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
   const [proxDrills, setProxDrills] = useState<ProximityDrill[]>([]);
 
   // Timer
@@ -107,7 +107,7 @@ export default function SessionScreen() {
     setBuckets(prev => ({ ...prev, [key]: n }));
   };
 
-  const proxTotal = buckets.inside1m + buckets.one2m + buckets.two3m + buckets.beyond3m;
+  const proxTotal = buckets.inside1m + buckets.one2m + buckets.two3m + buckets.beyond3m + buckets.miss;
   const proxSuccess = calcSuccess(buckets, proxTotal);
 
   const addProxDrill = () => {
@@ -187,20 +187,25 @@ export default function SessionScreen() {
             proxDrills.length === 0 ? (
               <Text style={styles.empty}>No drills yet — pick a distance below or type your own</Text>
             ) : (
-              proxDrills.map((item, i) => (
-                <View key={i} style={styles.drillItem}>
-                  <View style={styles.drillNameCol}>
-                    <Text style={styles.drillName}>{item.name}</Text>
-                    {item.club && <Text style={styles.drillClub}>{item.club}</Text>}
+              <>
+                <Text style={styles.totalBalls}>
+                  🎱 {proxDrills.reduce((sum, d) => sum + d.attempts, 0)} balls total
+                </Text>
+                {proxDrills.map((item, i) => (
+                  <View key={i} style={styles.drillItem}>
+                    <View style={styles.drillNameCol}>
+                      <Text style={styles.drillName}>{item.name}</Text>
+                      {item.club && <Text style={styles.drillClub}>{item.club}</Text>}
+                    </View>
+                    <View style={styles.drillScoreCol}>
+                      <Text style={styles.drillScore}>{item.attempts} balls · {item.success}% inside 2m</Text>
+                      <Text style={styles.drillBuckets}>
+                        ≤1m:{item.buckets.inside1m}  1–2m:{item.buckets.one2m}  2–3m:{item.buckets.two3m}  3m+:{item.buckets.beyond3m}  ❌:{item.buckets.miss ?? 0}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.drillScoreCol}>
-                    <Text style={styles.drillScore}>{item.success}% inside 2m</Text>
-                    <Text style={styles.drillBuckets}>
-                      ≤1m:{item.buckets.inside1m}  1–2m:{item.buckets.one2m}  2–3m:{item.buckets.two3m}  3m+:{item.buckets.beyond3m}
-                    </Text>
-                  </View>
-                </View>
-              ))
+                ))}
+              </>
             )
           ) : (
             drills.length === 0 ? (
@@ -280,6 +285,7 @@ export default function SessionScreen() {
                 { key: 'one2m',    label: '1–2m' },
                 { key: 'two3m',    label: '2–3m' },
                 { key: 'beyond3m', label: '3m+' },
+                { key: 'miss',     label: '❌ Miss' },
               ] as { key: keyof ProximityBuckets; label: string }[]).map(({ key, label }) => (
                 <View key={key} style={styles.bucketItem}>
                   <Text style={styles.bucketLabel}>{label}</Text>
@@ -392,6 +398,7 @@ const styles = StyleSheet.create({
   drillItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   drillName: { fontSize: 16, color: '#333', flex: 1, flexWrap: 'wrap' },
   drillScore: { fontSize: 15, color: '#4CAF50', fontWeight: '600' },
+  totalBalls: { fontSize: 13, fontWeight: '700', color: '#4CAF50', textAlign: 'center', marginBottom: 8, marginTop: 4 },
   drillNameCol: { flex: 1 },
   drillClub: { fontSize: 12, color: '#4CAF50', fontWeight: '600', marginTop: 2 },
   drillScoreCol: { alignItems: 'flex-end' },

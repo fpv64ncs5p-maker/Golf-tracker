@@ -226,9 +226,11 @@ export default function DashboardScreen() {
                       </Text>
                     )}
                     {(item.proximityDrills?.length ?? 0) > 0 && (
-                      <Text style={styles.cardDrills}>
-                        {item.proximityDrills!.map((d) => `${d.name} ${d.success}%↓2m`).join('  ·  ')}
-                      </Text>
+                      <>
+                        <Text style={styles.cardDrills}>
+                          🎱 {item.proximityDrills!.reduce((sum, d) => sum + d.attempts, 0)} balls  ·  {item.proximityDrills!.map((d) => `${d.name} ${d.success}%`).join('  ·  ')}
+                        </Text>
+                      </>
                     )}
                     {item.notes ? (
                       <Text style={styles.cardNotes}>📝 {item.notes}</Text>

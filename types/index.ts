@@ -54,6 +54,7 @@ export interface ProximityBuckets {
   one2m: number;     // 1–2m
   two3m: number;     // 2–3m
   beyond3m: number;  // 3m+
+  miss: number;      // off green / missed entirely
 }
 
 /**
