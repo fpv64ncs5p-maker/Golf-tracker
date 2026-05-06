@@ -82,6 +82,24 @@ export default function DashboardScreen() {
     });
   };
 
+  // ── Web date change (HTML input) ────────────────────────────
+  const handleWebDateChange = async (type: 'session' | 'round', index: number, dateString: string) => {
+    if (!dateString) return;
+    const newDate = new Date(dateString + 'T12:00:00').toISOString();
+    if (type === 'session') {
+      const all = await getSessions();
+      const originalIndex = all.length - 1 - index;
+      all[originalIndex].date = newDate;
+      await saveSessions(all);
+    } else {
+      const all = await getRounds();
+      const originalIndex = all.length - 1 - index;
+      all[originalIndex].date = newDate;
+      await saveRounds(all);
+    }
+    loadData();
+  };
+
   // ── Open date picker ────────────────────────────────────────
   const openDatePicker = (type: 'session' | 'round', index: number, currentDate: string) => {
     setPickerDate(new Date(currentDate));
@@ -219,9 +237,19 @@ export default function DashboardScreen() {
                     {/* Expanded actions */}
                     {isExpanded && (
                       <View style={styles.actions}>
-                        <TouchableOpacity style={styles.editDateBtn} onPress={() => openDatePicker('session', i, item.date)}>
-                          <Text style={styles.editDateText}>📅 Edit Date</Text>
-                        </TouchableOpacity>
+                        {Platform.OS === 'web' ? (
+                          <input
+                            type="date"
+                            defaultValue={item.date.split('T')[0]}
+                            max={new Date().toISOString().split('T')[0]}
+                            onChange={(e: any) => handleWebDateChange('session', i, e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, color: '#2e7d32', backgroundColor: '#e8f5e9', cursor: 'pointer' } as any}
+                          />
+                        ) : (
+                          <TouchableOpacity style={styles.editDateBtn} onPress={() => openDatePicker('session', i, item.date)}>
+                            <Text style={styles.editDateText}>📅 Edit Date</Text>
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteSession(i)}>
                           <Text style={styles.deleteBtnText}>🗑 Delete</Text>
                         </TouchableOpacity>
@@ -282,9 +310,19 @@ export default function DashboardScreen() {
                     {/* Expanded actions */}
                     {isExpanded && (
                       <View style={styles.actions}>
-                        <TouchableOpacity style={styles.editDateBtn} onPress={() => openDatePicker('round', i, item.date)}>
-                          <Text style={styles.editDateText}>📅 Edit Date</Text>
-                        </TouchableOpacity>
+                        {Platform.OS === 'web' ? (
+                          <input
+                            type="date"
+                            defaultValue={item.date.split('T')[0]}
+                            max={new Date().toISOString().split('T')[0]}
+                            onChange={(e: any) => handleWebDateChange('round', i, e.target.value)}
+                            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, color: '#2e7d32', backgroundColor: '#e8f5e9', cursor: 'pointer' } as any}
+                          />
+                        ) : (
+                          <TouchableOpacity style={styles.editDateBtn} onPress={() => openDatePicker('round', i, item.date)}>
+                            <Text style={styles.editDateText}>📅 Edit Date</Text>
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity style={styles.detailBtn} onPress={() => router.push({ pathname: '/round-detail', params: { index: i } })}>
                           <Text style={styles.detailBtnText}>📋 View</Text>
                         </TouchableOpacity>
