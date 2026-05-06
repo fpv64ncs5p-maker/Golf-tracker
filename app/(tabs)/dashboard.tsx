@@ -242,6 +242,7 @@ export default function DashboardScreen() {
                             type="date"
                             defaultValue={item.date.split('T')[0]}
                             max={new Date().toISOString().split('T')[0]}
+                            onClick={(e: any) => e.stopPropagation()}
                             onChange={(e: any) => handleWebDateChange('session', i, e.target.value)}
                             style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13, color: '#2e7d32', backgroundColor: '#e8f5e9', cursor: 'pointer' } as any}
                           />
