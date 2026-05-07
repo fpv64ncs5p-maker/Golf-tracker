@@ -394,10 +394,10 @@ export const WESTEPARK: Course = {
   club: 'Hollandsche Golfclub',
   name: 'Westepark',
   tees: {
-    White:  { par: 71, rating: null, slope: null },
-    Yellow: { par: 71, rating: null, slope: null },
-    Red:    { par: 71, rating: null, slope: null },
-    Blue:   { par: 71, rating: 71.1, slope: 136 },
+    White:  { par: 71, rating: 72.0, slope: 136 },  // Men
+    Yellow: { par: 71, rating: 71.1, slope: 136 },  // Men
+    Blue:   { par: 71, rating: 72.8, slope: 129 },  // Women
+    Red:    { par: 71, rating: 71.7, slope: 126 },  // Women
     Orange: { par: 71, rating: null, slope: null },
   },
   holes: [
