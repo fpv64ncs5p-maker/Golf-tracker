@@ -17,11 +17,22 @@ async function upsertCourse(courseData: Course, storedCourses: Course[]): Promis
   );
 
   if (existingIndex >= 0) {
-    return storedCourses.map((c, i) =>
-      i === existingIndex
-        ? { ...courseData, id: c.id, tees: { ...courseData.tees, ...c.tees } }
-        : c
-    );
+    return storedCourses.map((c, i) => {
+      if (i !== existingIndex) return c;
+      // Merge tees: prefer stored values if user has entered real CR/SR,
+      // otherwise fall back to seed data (so new seed values propagate when stored is null)
+      const mergedTees: Record<string, any> = { ...courseData.tees };
+      Object.entries(c.tees).forEach(([tee, stored]: [string, any]) => {
+        const seed = (courseData.tees as any)[tee];
+        mergedTees[tee] = {
+          ...seed,
+          ...stored,
+          rating: stored.rating ?? seed?.rating ?? null,
+          slope:  stored.slope  ?? seed?.slope  ?? null,
+        };
+      });
+      return { ...courseData, id: c.id, tees: mergedTees };
+    });
   } else {
     return [...storedCourses, courseData];
   }
