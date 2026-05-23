@@ -275,11 +275,7 @@ export default function SessionDetailScreen() {
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.title}>{session.type} Session</Text>
-          {dirty && (
-            <TouchableOpacity onPress={saveSession} style={styles.saveBtn}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
-          )}
+          <View style={{ width: 50 }} />
         </View>
 
         {/* Meta row */}
@@ -622,12 +618,10 @@ export default function SessionDetailScreen() {
           />
         </View>
 
-        {/* Save button */}
-        {dirty && (
-          <TouchableOpacity onPress={saveSession} style={styles.saveFullBtn}>
-            <Text style={styles.saveFullBtnText}>💾 Save Changes</Text>
-          </TouchableOpacity>
-        )}
+        {/* Save button — always visible */}
+        <TouchableOpacity onPress={saveSession} style={styles.saveFullBtn}>
+          <Text style={styles.saveFullBtnText}>💾 Save Session</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
