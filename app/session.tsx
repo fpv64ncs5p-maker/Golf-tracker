@@ -223,7 +223,11 @@ export default function SessionScreen() {
       </View>
 
       {/* Bottom section — pinned input area */}
-      <View style={styles.bottomSection}>
+      <ScrollView
+        style={styles.bottomSection}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
         {proximity ? (
           <>
@@ -381,7 +385,8 @@ export default function SessionScreen() {
         <TouchableOpacity style={styles.endButton} onPress={saveSession}>
           <Text style={styles.endText}>End & Save Session</Text>
         </TouchableOpacity>
-      </View>
+        <View style={{ height: 16 }} />
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -405,7 +410,7 @@ const styles = StyleSheet.create({
   drillBuckets: { fontSize: 11, color: '#999', marginTop: 2 },
   clubSelectorLabel: { fontSize: 12, fontWeight: '700', color: '#555', marginBottom: 6 },
 
-  bottomSection: { padding: 16, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
+  bottomSection: { maxHeight: '55%', padding: 16, borderTopWidth: 1, borderTopColor: '#eee', backgroundColor: '#fff' },
 
   chipsScroll: { marginBottom: 10, overflow: 'scroll' as any },
   chipsContainer: { flexDirection: 'row', gap: 8, paddingVertical: 4, paddingHorizontal: 2 },

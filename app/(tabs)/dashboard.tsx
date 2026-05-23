@@ -253,6 +253,12 @@ export default function DashboardScreen() {
                             <Text style={styles.editDateText}>📅 Edit Date</Text>
                           </TouchableOpacity>
                         )}
+                        <TouchableOpacity style={styles.detailBtn} onPress={() => router.push({ pathname: '/session-detail', params: { index: i } })}>
+                          <Text style={styles.detailBtnText}>📋 View</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.editHolesBtn} onPress={() => router.push({ pathname: '/session-detail', params: { index: i } })}>
+                          <Text style={styles.editHolesBtnText}>✏️ Edit</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteSession(i)}>
                           <Text style={styles.deleteBtnText}>🗑 Delete</Text>
                         </TouchableOpacity>
