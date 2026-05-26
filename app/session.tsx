@@ -86,9 +86,16 @@ export default function SessionScreen() {
   };
 
   const addStandardDrill = () => {
-    if (!drillName || !made || !attempts) return;
+    if (!drillName || !made || !attempts) {
+      if (Platform.OS === 'web') {
+        alert('Please fill in drill name, made and total before adding.');
+      } else {
+        Alert.alert('Missing fields', 'Fill in drill name, made, and total before adding.');
+      }
+      return;
+    }
     const success = Math.round((parseInt(made) / parseInt(attempts)) * 100);
-    setDrills([...drills, { name: drillName, made, attempts, success }]);
+    setDrills(prev => [...prev, { name: drillName, made, attempts, success }]);
     setDrillName('');
     setMade('');
     setAttempts('');
@@ -111,8 +118,15 @@ export default function SessionScreen() {
   const proxSuccess = calcSuccess(buckets, proxTotal);
 
   const addProxDrill = () => {
-    if (!proxDrillName || proxTotal === 0) return;
-    setProxDrills([...proxDrills, {
+    if (!proxDrillName || proxTotal === 0) {
+      if (Platform.OS === 'web') {
+        alert(!proxDrillName ? 'Please enter a drill name.' : 'Please enter at least one ball count before adding.');
+      } else {
+        Alert.alert('Missing fields', !proxDrillName ? 'Please enter a drill name.' : 'Please enter at least one ball count before adding.');
+      }
+      return;
+    }
+    setProxDrills(prev => [...prev, {
       name: proxDrillName,
       attempts: proxTotal,
       buckets: { ...buckets },
@@ -121,7 +135,7 @@ export default function SessionScreen() {
     }]);
     setProxDrillName('');
     setProxClub(null);
-    setBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0 });
+    setBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
   };
 
   // ── Save / Discard ─────────────────────────────────────────────────────────
@@ -145,11 +159,30 @@ export default function SessionScreen() {
 
   const saveSession = async () => {
     try {
+      // Auto-add any pending standard drill
+      let finalDrills = [...drills];
+      if (!proximity && drillName && made && attempts) {
+        const success = Math.round((parseInt(made) / parseInt(attempts)) * 100);
+        finalDrills = [...finalDrills, { name: drillName, made, attempts, success }];
+      }
+
+      // Auto-add any pending proximity drill
+      let finalProxDrills = [...proxDrills];
+      if (proximity && proxDrillName && proxTotal > 0) {
+        finalProxDrills = [...finalProxDrills, {
+          name: proxDrillName,
+          attempts: proxTotal,
+          buckets: { ...buckets },
+          success: proxSuccess,
+          club: proxClub ?? undefined,
+        }];
+      }
+
       const newSession: PracticeSession = {
         type: sessionType as PracticeSession['type'],
         duration: seconds,
-        drills: proximity ? [] : drills,
-        proximityDrills: proximity ? proxDrills : undefined,
+        drills: proximity ? [] : finalDrills,
+        proximityDrills: proximity ? finalProxDrills : undefined,
         notes,
         date: new Date().toISOString(),
       };
