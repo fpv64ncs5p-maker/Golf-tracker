@@ -78,22 +78,45 @@ const dominantMiss = (g: DirectionGrid): string | null => {
   return g[top.key] > 0 ? top.label : null;
 };
 
-// Adaptive threshold: looks at last 5 sessions of this type with grid data.
-// Tightens target (3→2→1m) if avg success ≥ 60%, loosens if < 25%.
-const calcAdaptiveThreshold = (sessions: PracticeSession[], type: string): number => {
-  // Include both new (grid) and old (bucket) sessions — old ones count as threshold=2
+// Returns adaptive level 1/2/3 based on recent session success.
+// Chipping: level 1=≤3m, 2=≤2m, 3=≤1m (pin-based)
+// Pitching: level 1=10%, 2=7.5%, 3=5% of drill distance
+const calcAdaptiveLevel = (sessions: PracticeSession[], type: string): number => {
+  const defaultLevel = type === 'Chipping' ? 2 : 1; // chipping starts at ≤2m, pitching at 10%
   const relevant = sessions
     .filter(s => s.type === type && (s.proximityDrills ?? []).some(d => d.grid || d.buckets));
-  if (relevant.length < 3) return 2; // default until enough data
+  if (relevant.length < 3) return defaultLevel;
   const last5 = relevant.slice(-5);
   const allDrills = last5.flatMap(s => s.proximityDrills ?? []).filter(d => d.grid || d.buckets);
-  if (allDrills.length === 0) return 2;
-  // Current threshold: take from most recent grid drill, or default 2 for old bucket drills
-  const currentThreshold = [...allDrills].reverse().find(d => d.threshold != null)?.threshold ?? 2;
+  if (allDrills.length === 0) return defaultLevel;
+  // Get current level — from stored thresholdLevel, or infer from old chipping meters
+  const lastDrill = [...allDrills].reverse()[0];
+  let currentLevel: number;
+  if (lastDrill.thresholdLevel != null) {
+    currentLevel = lastDrill.thresholdLevel;
+  } else if (lastDrill.threshold != null && type === 'Chipping') {
+    currentLevel = lastDrill.threshold === 3 ? 1 : lastDrill.threshold === 1 ? 3 : 2;
+  } else {
+    currentLevel = defaultLevel;
+  }
   const avgSuccess = allDrills.reduce((sum, d) => sum + d.success, 0) / allDrills.length;
-  if (avgSuccess >= 60 && currentThreshold > 1) return currentThreshold - 1;
-  if (avgSuccess < 25 && currentThreshold < 3) return currentThreshold + 1;
-  return currentThreshold;
+  if (avgSuccess >= 60 && currentLevel < 3) return currentLevel + 1;
+  if (avgSuccess < 25 && currentLevel > 1) return currentLevel - 1;
+  return currentLevel;
+};
+
+// Compute actual threshold in metres from drill name + type + level
+const getActualThreshold = (drillName: string, type: string, level: number): number => {
+  if (type === 'Pitching') {
+    const match = drillName.match(/(\d+)/);
+    if (match) {
+      const dist = parseInt(match[1]);
+      const pct = [0.10, 0.075, 0.05][level - 1];
+      return Math.round(dist * pct * 2) / 2; // round to nearest 0.5m
+    }
+    return [5, 3.5, 2.5][level - 1]; // fallback (≈50m equivalent)
+  }
+  return [3, 2, 1][level - 1]; // chipping: level 1=3m, 2=2m, 3=1m
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -106,7 +129,7 @@ export default function SessionScreen() {
 
   const [seconds, setSeconds] = useState(0);
   const [notes, setNotes] = useState('');
-  const [threshold, setThreshold] = useState(2);
+  const [adaptiveLevel, setAdaptiveLevel] = useState(1);
 
   // Unified drill name
   const [drillName, setDrillName] = useState('');
@@ -129,11 +152,11 @@ export default function SessionScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load adaptive threshold for chipping/pitching
+  // Load adaptive level for chipping/pitching
   useEffect(() => {
     if (proximity) {
       getSessions().then(sessions => {
-        setThreshold(calcAdaptiveThreshold(sessions, sessionType));
+        setAdaptiveLevel(calcAdaptiveLevel(sessions, sessionType));
       });
     }
   }, []);
@@ -144,7 +167,8 @@ export default function SessionScreen() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const centerLabel = sessionType === 'Putting' ? 'Holed' : `≤${threshold}m ✓`;
+  const actualThreshold = proximity ? getActualThreshold(drillName, sessionType, adaptiveLevel) : 0;
+  const centerLabel = sessionType === 'Putting' ? 'Holed' : `≤${actualThreshold}m ✓`;
   const gridTotal = sumGrid(grid);
   const gridSuccessPct = successFromGrid(grid);
 
@@ -166,7 +190,8 @@ export default function SessionScreen() {
     const success = gridSuccessPct;
     if (proximity) {
       setProxDrills(prev => [...prev, {
-        name: drillName, attempts: gridTotal, grid: { ...grid }, threshold, success,
+        name: drillName, attempts: gridTotal, grid: { ...grid },
+        threshold: actualThreshold, thresholdLevel: adaptiveLevel, success,
         club: proxClub ?? undefined,
       }]);
     } else {
@@ -217,7 +242,8 @@ export default function SessionScreen() {
         const success = gridSuccessPct;
         if (proximity) {
           finalProxDrills = [...finalProxDrills, {
-            name: drillName, attempts: gridTotal, grid: { ...grid }, threshold, success,
+            name: drillName, attempts: gridTotal, grid: { ...grid },
+            threshold: actualThreshold, thresholdLevel: adaptiveLevel, success,
             club: proxClub ?? undefined,
           }];
         } else {
@@ -369,8 +395,14 @@ export default function SessionScreen() {
             )}
 
             {/* Adaptive threshold badge */}
-            {proximity && (
-              <Text style={styles.thresholdBadge}>🎯 Target today: ≤{threshold}m</Text>
+            {sessionType === 'Chipping' && (
+              <Text style={styles.thresholdBadge}>🎯 Target today: ≤{getActualThreshold('', 'Chipping', adaptiveLevel)}m</Text>
+            )}
+            {sessionType === 'Pitching' && drillName && (
+              <Text style={styles.thresholdBadge}>🎯 Target: ≤{actualThreshold}m for this drill</Text>
+            )}
+            {sessionType === 'Pitching' && !drillName && (
+              <Text style={styles.thresholdBadge}>🎯 Select a drill to see your target</Text>
             )}
 
             {/* 3×3 Direction Grid */}

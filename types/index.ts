@@ -77,7 +77,8 @@ export interface ProximityDrill {
   attempts: number;       // total shots = sum of grid cells
   // New: direction grid
   grid?: DirectionGrid;
-  threshold?: number;     // adaptive target in metres: 1, 2, or 3
+  threshold?: number;      // actual target in metres (stored per drill)
+  thresholdLevel?: number; // adaptive level: 1=amateur, 2=good, 3=elite
   // Legacy bucket data (kept for backward compat with old sessions)
   buckets?: ProximityBuckets;
   success: number;        // % of shots in center zone

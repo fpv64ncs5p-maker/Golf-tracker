@@ -136,10 +136,50 @@ export default function DashboardScreen() {
 
   const practiceStats = () => {
     const total = sessions.length;
-    const totalTime = sessions.reduce((sum: number, s: PracticeSession) => sum + s.duration, 0);
     const typeCount: Record<string, number> = { Putting: 0, Chipping: 0, Pitching: 0, 'Long Game': 0, 'Short Game': 0 };
     sessions.forEach((s: PracticeSession) => { if (typeCount[s.type] !== undefined) typeCount[s.type]++; });
-    return { total, totalTime, typeCount };
+    return { total, typeCount };
+  };
+
+  // ── Insights helpers ────────────────────────────────────────────────────────
+
+  const calcSuccessRates = () => {
+    const types: PracticeSession['type'][] = ['Putting', 'Chipping', 'Pitching', 'Long Game'];
+    const result: { type: string; avg: number; label: string; count: number }[] = [];
+    for (const type of types) {
+      const recent = sessions.filter((s: PracticeSession) => s.type === type).slice(0, 5);
+      if (recent.length === 0) continue;
+      const isProx = type === 'Chipping' || type === 'Pitching';
+      const allDrills = recent.flatMap((s: PracticeSession) =>
+        isProx ? (s.proximityDrills ?? []) : s.drills
+      ).filter(d => d.success > 0);
+      if (allDrills.length === 0) continue;
+      const avg = Math.round(allDrills.reduce((sum, d) => sum + d.success, 0) / allDrills.length);
+      const label = type === 'Putting' ? 'holed' : 'on target';
+      result.push({ type, avg, label, count: recent.length });
+    }
+    return result;
+  };
+
+  const getPracticeRec = (rates: { type: string; avg: number; count: number }[]) => {
+    const eligible = rates.filter(r => r.count >= 2);
+    if (eligible.length === 0) return null;
+    const worst = eligible.reduce((min, r) => r.avg < min.avg ? r : min, eligible[0]);
+    return `💡 Focus on ${worst.type} — ${worst.avg}% avg over last ${worst.count} sessions`;
+  };
+
+  const getRoundRec = () => {
+    if (sessions.length === 0) return null;
+    const sessionsSinceLast = rounds.length === 0
+      ? sessions.length
+      : sessions.filter((s: PracticeSession) => new Date(s.date) > new Date(rounds[0].date)).length;
+    const daysSinceLast = rounds.length === 0
+      ? 999
+      : Math.floor((Date.now() - new Date(rounds[0].date).getTime()) / (1000 * 60 * 60 * 24));
+    if (sessionsSinceLast >= 6) return '⛳ 6+ sessions since your last round — time to test it on a full course!';
+    if (sessionsSinceLast >= 3) return '⛳ 3+ practice sessions done — a Par 3 round would be a great test!';
+    if (daysSinceLast >= 21) return `⛳ ${Math.floor(daysSinceLast / 7)} weeks since your last round — consider getting out!`;
+    return null;
   };
 
   const roundStats = () => {
@@ -153,6 +193,9 @@ export default function DashboardScreen() {
 
   const ps = practiceStats();
   const rs = roundStats();
+  const successRates = calcSuccessRates();
+  const practiceRec = getPracticeRec(successRates);
+  const roundRec = getRoundRec();
 
   return (
     <View style={styles.container}>
@@ -189,11 +232,38 @@ export default function DashboardScreen() {
       {/* Practice tab */}
       {activeTab === 'practice' && (
         <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+          {/* Session type counts */}
           <View style={styles.statsBox}>
             <Text style={styles.statText}>
               Putting: {ps.typeCount.Putting}  ·  Chipping: {ps.typeCount.Chipping}  ·  Pitching: {ps.typeCount.Pitching}  ·  Long Game: {ps.typeCount['Long Game']}
             </Text>
           </View>
+
+          {/* Insights */}
+          {successRates.length > 0 && (
+            <View style={styles.insightsBox}>
+              <Text style={styles.insightsTitle}>📈 Success Rates (last 5 sessions)</Text>
+              {successRates.map(r => (
+                <View key={r.type} style={styles.insightRow}>
+                  <Text style={styles.insightType}>{r.type}</Text>
+                  <View style={styles.insightBarBg}>
+                    <View style={[styles.insightBarFill, { width: `${r.avg}%` as any }]} />
+                  </View>
+                  <Text style={styles.insightPct}>{r.avg}%</Text>
+                </View>
+              ))}
+              {practiceRec && (
+                <View style={styles.recBox}>
+                  <Text style={styles.recText}>{practiceRec}</Text>
+                </View>
+              )}
+              {roundRec && (
+                <View style={styles.roundRecBox}>
+                  <Text style={styles.roundRecText}>{roundRec}</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {sessions.length === 0 ? (
             <View style={styles.emptyState}>
@@ -450,4 +520,16 @@ const styles = StyleSheet.create({
 
   homeButton: { marginTop: 12, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: '#ddd' },
   homeText: { textAlign: 'center', fontSize: 15, color: '#333' },
+
+  insightsBox: { backgroundColor: '#f9f9f9', borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#eee' },
+  insightsTitle: { fontSize: 13, fontWeight: '700', color: '#555', marginBottom: 10 },
+  insightRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  insightType: { fontSize: 12, color: '#444', fontWeight: '600', width: 70 },
+  insightBarBg: { flex: 1, height: 8, backgroundColor: '#e0e0e0', borderRadius: 4, overflow: 'hidden' },
+  insightBarFill: { height: 8, backgroundColor: '#4CAF50', borderRadius: 4 },
+  insightPct: { fontSize: 12, fontWeight: '700', color: '#4CAF50', width: 34, textAlign: 'right' },
+  recBox: { backgroundColor: '#e8f5e9', borderRadius: 8, padding: 10, marginTop: 8 },
+  recText: { fontSize: 13, color: '#2e7d32', fontWeight: '600' },
+  roundRecBox: { backgroundColor: '#e3f2fd', borderRadius: 8, padding: 10, marginTop: 6 },
+  roundRecText: { fontSize: 13, color: '#1565C0', fontWeight: '600' },
 });
