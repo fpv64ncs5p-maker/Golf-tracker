@@ -6,51 +6,140 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { getSessions, saveSessions } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, ProximityBuckets } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid } from '../types';
 
 const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
-const STANDARD_DRILLS: Record<string, { name: string; attempts: string }[]> = {
-  Putting: [
-    { name: 'Short Putts 1m', attempts: '25' },
-    { name: 'Short Putts 2m', attempts: '15' },
-    { name: 'Lag Putting 6m', attempts: '10' },
-    { name: 'Lag Putting 9m', attempts: '10' },
-    { name: 'Lag Putting 12m', attempts: '10' },
-    { name: 'Pressure Ladder', attempts: '10' },
-  ],
-  'Long Game': [
-    { name: 'Wedge 45m', attempts: '10' },
-    { name: 'Wedge 70m', attempts: '10' },
-    { name: 'Wedge 90m', attempts: '10' },
-    { name: 'Trajectory Drill', attempts: '15' },
-    { name: 'Mid Irons Solid', attempts: '10' },
-    { name: 'Mid Irons Target', attempts: '10' },
-    { name: 'Fairway Finder', attempts: '10' },
-    { name: 'Shape Practice', attempts: '10' },
-  ],
-};
-
-const PROXIMITY_DRILLS: Record<string, string[]> = {
+const GRID_SUGGESTIONS: Record<string, string[]> = {
+  Putting: ['Short Putts 1m', 'Short Putts 2m', 'Short Putts 3m', 'Lag Putting 6m', 'Lag Putting 9m', 'Lag Putting 12m', 'Pressure Ladder'],
   Chipping: ['Chip 5m', 'Chip 10m', 'Chip 15m', 'Chip 20m', 'Chip 30m'],
   Pitching: ['Pitch 20m', 'Pitch 30m', 'Pitch 40m', 'Pitch 50m', 'Pitch 60m', 'Pitch 70m'],
 };
 
-const isProximityType = (type: string) => type === 'Chipping' || type === 'Pitching';
-
-const calcSuccess = (buckets: ProximityBuckets, total: number) => {
-  if (total === 0) return 0;
-  return Math.round(((buckets.inside1m + buckets.one2m) / total) * 100);
+const LEGACY_SUGGESTIONS: Record<string, { name: string; attempts: string }[]> = {
+  'Long Game': [
+    { name: 'Wedge 45m', attempts: '10' }, { name: 'Wedge 70m', attempts: '10' },
+    { name: 'Wedge 90m', attempts: '10' }, { name: 'Trajectory Drill', attempts: '15' },
+    { name: 'Mid Irons Solid', attempts: '10' }, { name: 'Mid Irons Target', attempts: '10' },
+    { name: 'Fairway Finder', attempts: '10' }, { name: 'Shape Practice', attempts: '10' },
+  ],
 };
+
+// ── Grid helpers ──────────────────────────────────────────────────────────────
+
+type GridKey = keyof DirectionGrid;
+
+const GRID_LAYOUT: { key: GridKey; label: string }[][] = [
+  [
+    { key: 'longLeft', label: 'Long\nLeft' },
+    { key: 'long', label: 'Long' },
+    { key: 'longRight', label: 'Long\nRight' },
+  ],
+  [
+    { key: 'left', label: 'Left' },
+    { key: 'center', label: '__CENTER__' },
+    { key: 'right', label: 'Right' },
+  ],
+  [
+    { key: 'shortLeft', label: 'Short\nLeft' },
+    { key: 'short', label: 'Short' },
+    { key: 'shortRight', label: 'Short\nRight' },
+  ],
+];
+
+const emptyGrid = (): DirectionGrid => ({
+  longLeft: 0, long: 0, longRight: 0,
+  left: 0, center: 0, right: 0,
+  shortLeft: 0, short: 0, shortRight: 0,
+});
+
+const sumGrid = (g: DirectionGrid) =>
+  g.longLeft + g.long + g.longRight + g.left + g.center + g.right + g.shortLeft + g.short + g.shortRight;
+
+const successFromGrid = (g: DirectionGrid) => {
+  const total = sumGrid(g);
+  return total === 0 ? 0 : Math.round((g.center / total) * 100);
+};
+
+const dominantMiss = (g: DirectionGrid): string | null => {
+  const cells: { key: GridKey; label: string }[] = [
+    { key: 'longLeft', label: 'Long Left' }, { key: 'long', label: 'Long' }, { key: 'longRight', label: 'Long Right' },
+    { key: 'left', label: 'Left' }, { key: 'right', label: 'Right' },
+    { key: 'shortLeft', label: 'Short Left' }, { key: 'short', label: 'Short' }, { key: 'shortRight', label: 'Short Right' },
+  ];
+  const top = cells.reduce((max, c) => g[c.key] > g[max.key] ? c : max, cells[0]);
+  return g[top.key] > 0 ? top.label : null;
+};
+
+const isProximityType = (type: string) => type === 'Chipping' || type === 'Pitching';
+const useGridInput = (type: string) => type === 'Putting' || isProximityType(type);
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
-
 const formatDate = (date: string) =>
   new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+// ── Grid display component (view + edit mode) ─────────────────────────────────
+
+function GridDisplay({
+  grid,
+  centerLabel,
+  editable = false,
+  onTap,
+  onLongPress,
+}: {
+  grid: DirectionGrid;
+  centerLabel: string;
+  editable?: boolean;
+  onTap?: (key: GridKey) => void;
+  onLongPress?: (key: GridKey) => void;
+}) {
+  return (
+    <View style={gridStyles.container}>
+      {GRID_LAYOUT.map((row, rowIdx) => (
+        <View key={rowIdx} style={gridStyles.row}>
+          {row.map(({ key, label }) => {
+            const isCenter = key === 'center';
+            const count = grid[key];
+            const displayLabel = isCenter ? centerLabel : label;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  gridStyles.cell,
+                  isCenter && gridStyles.centerCell,
+                  count > 0 && !isCenter && gridStyles.activeCell,
+                  count > 0 && isCenter && gridStyles.centerActiveCell,
+                  !editable && gridStyles.readOnly,
+                ]}
+                onPress={() => editable && onTap?.(key)}
+                onLongPress={() => editable && onLongPress?.(key)}
+                activeOpacity={editable ? 0.7 : 1}
+                delayLongPress={300}
+              >
+                <Text style={[gridStyles.label, isCenter && gridStyles.centerLabelText]} numberOfLines={2}>
+                  {displayLabel}
+                </Text>
+                <Text style={[gridStyles.count, isCenter && gridStyles.centerCount, count === 0 && gridStyles.zeroCount]}>
+                  {count}
+                </Text>
+                {editable && count > 0 && !isCenter && (
+                  <Text style={gridStyles.hint}>hold −</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
+      {editable && <Text style={gridStyles.editHint}>Tap to add · Hold to remove</Text>}
+    </View>
+  );
+}
+
+// ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function SessionDetailScreen() {
   const { index } = useLocalSearchParams();
@@ -60,7 +149,6 @@ export default function SessionDetailScreen() {
   const [originalIndex, setOriginalIndex] = useState<number>(0);
   const [dirty, setDirty] = useState(false);
 
-  // Edit state
   const [notes, setNotes] = useState('');
   const [drills, setDrills] = useState<Drill[]>([]);
   const [proxDrills, setProxDrills] = useState<ProximityDrill[]>([]);
@@ -70,36 +158,28 @@ export default function SessionDetailScreen() {
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(new Date());
 
-  // Add drill form (standard)
+  // ── Add drill forms ────────────────────────────────────────────────────────
   const [addingDrill, setAddingDrill] = useState(false);
   const [newDrillName, setNewDrillName] = useState('');
+  const [newGrid, setNewGrid] = useState<DirectionGrid>(emptyGrid());
+  const [newProxClub, setNewProxClub] = useState<string | null>(null);
+  // Legacy add form (Long Game)
   const [newMade, setNewMade] = useState('');
   const [newAttempts, setNewAttempts] = useState('');
 
-  // Add proximity drill form
-  const [addingProx, setAddingProx] = useState(false);
-  const [newProxName, setNewProxName] = useState('');
-  const [newProxClub, setNewProxClub] = useState<string | null>(null);
-  const [newBuckets, setNewBuckets] = useState<ProximityBuckets>({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
-
-  // Inline editing
-  const [editingDrillIndex, setEditingDrillIndex] = useState<number | null>(null);
-  const [editDrillName, setEditDrillName] = useState('');
+  // ── Inline edit ────────────────────────────────────────────────────────────
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editGrid, setEditGrid] = useState<DirectionGrid>(emptyGrid());
+  const [editClub, setEditClub] = useState<string | null>(null);
+  // Legacy edit
   const [editMade, setEditMade] = useState('');
   const [editAttempts, setEditAttempts] = useState('');
 
-  const [editingProxIndex, setEditingProxIndex] = useState<number | null>(null);
-  const [editProxName, setEditProxName] = useState('');
-  const [editProxClub, setEditProxClub] = useState<string | null>(null);
-  const [editBuckets, setEditBuckets] = useState<ProximityBuckets>({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
-
-  useEffect(() => {
-    loadSession();
-  }, []);
+  useEffect(() => { loadSession(); }, []);
 
   const loadSession = async () => {
     const all = await getSessions();
-    // sessionIndex is position in the reversed list shown on dashboard
     const orig = all.length - 1 - sessionIndex;
     const s = all[orig];
     if (!s) return;
@@ -112,8 +192,13 @@ export default function SessionDetailScreen() {
   };
 
   const proximity = session ? isProximityType(session.type) : false;
-  const standardSuggestions = session ? (STANDARD_DRILLS[session.type] ?? []) : [];
-  const proxSuggestions = session ? (PROXIMITY_DRILLS[session.type] ?? []) : [];
+  const useGrid = session ? useGridInput(session.type) : false;
+  const defaultThreshold = 2;
+
+  const getCenterLabel = (threshold?: number, type?: string) => {
+    if (type === 'Putting') return 'Holed';
+    return `≤${threshold ?? defaultThreshold}m ✓`;
+  };
 
   // ── Save ───────────────────────────────────────────────────────────────────
 
@@ -128,11 +213,8 @@ export default function SessionDetailScreen() {
     };
     await saveSessions(all);
     setDirty(false);
-    if (Platform.OS === 'web') {
-      alert('Session saved!');
-    } else {
-      Alert.alert('Saved', 'Session updated successfully.');
-    }
+    if (Platform.OS === 'web') alert('Session saved!');
+    else Alert.alert('Saved', 'Session updated successfully.');
   };
 
   const confirmBack = () => {
@@ -147,94 +229,90 @@ export default function SessionDetailScreen() {
     }
   };
 
-  // ── Delete drill ───────────────────────────────────────────────────────────
+  // ── Delete ─────────────────────────────────────────────────────────────────
 
-  const deleteDrill = (i: number) => {
-    setDrills(prev => prev.filter((_, idx) => idx !== i));
-    setDirty(true);
-  };
+  const deleteDrill = (i: number) => { setDrills(prev => prev.filter((_, idx) => idx !== i)); setDirty(true); };
+  const deleteProxDrill = (i: number) => { setProxDrills(prev => prev.filter((_, idx) => idx !== i)); setDirty(true); };
 
-  const deleteProxDrill = (i: number) => {
-    setProxDrills(prev => prev.filter((_, idx) => idx !== i));
-    setDirty(true);
-  };
-
-  // ── Add standard drill ─────────────────────────────────────────────────────
+  // ── Add drill ──────────────────────────────────────────────────────────────
 
   const confirmAddDrill = () => {
-    if (!newDrillName || !newMade || !newAttempts) return;
-    const success = Math.round((parseInt(newMade) / parseInt(newAttempts)) * 100);
-    setDrills(prev => [...prev, { name: newDrillName, made: newMade, attempts: newAttempts, success }]);
-    setNewDrillName(''); setNewMade(''); setNewAttempts('');
+    if (!newDrillName) return;
+    if (useGrid) {
+      const total = sumGrid(newGrid);
+      if (total === 0) return;
+      const success = successFromGrid(newGrid);
+      if (proximity) {
+        setProxDrills(prev => [...prev, {
+          name: newDrillName, attempts: total, grid: { ...newGrid },
+          threshold: defaultThreshold, success, club: newProxClub ?? undefined,
+        }]);
+      } else {
+        setDrills(prev => [...prev, { name: newDrillName, grid: { ...newGrid }, success }]);
+      }
+    } else {
+      if (!newMade || !newAttempts) return;
+      const success = Math.round((parseInt(newMade) / parseInt(newAttempts)) * 100);
+      setDrills(prev => [...prev, { name: newDrillName, made: newMade, attempts: newAttempts, success }]);
+    }
+    setNewDrillName(''); setNewGrid(emptyGrid()); setNewProxClub(null); setNewMade(''); setNewAttempts('');
     setAddingDrill(false);
     setDirty(true);
   };
 
-  // ── Add proximity drill ────────────────────────────────────────────────────
+  // ── Start edit ─────────────────────────────────────────────────────────────
 
-  const newProxTotal = newBuckets.inside1m + newBuckets.one2m + newBuckets.two3m + newBuckets.beyond3m + newBuckets.miss;
-  const newProxSuccess = calcSuccess(newBuckets, newProxTotal);
-
-  const confirmAddProx = () => {
-    if (!newProxName || newProxTotal === 0) return;
-    setProxDrills(prev => [...prev, {
-      name: newProxName,
-      attempts: newProxTotal,
-      buckets: { ...newBuckets },
-      success: newProxSuccess,
-      club: newProxClub ?? undefined,
-    }]);
-    setNewProxName(''); setNewProxClub(null);
-    setNewBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
-    setAddingProx(false);
-    setDirty(true);
+  const startEdit = (i: number) => {
+    if (proximity) {
+      const d = proxDrills[i];
+      setEditingIndex(i);
+      setEditName(d.name);
+      setEditGrid(d.grid ? { ...d.grid } : emptyGrid());
+      setEditClub(d.club ?? null);
+    } else {
+      const d = drills[i];
+      setEditingIndex(i);
+      setEditName(d.name);
+      if (d.grid) {
+        setEditGrid({ ...d.grid });
+      } else {
+        setEditGrid(emptyGrid());
+        setEditMade(d.made ?? '');
+        setEditAttempts(d.attempts ?? '');
+      }
+    }
   };
 
-  // ── Inline edit standard ───────────────────────────────────────────────────
-
-  const startEditDrill = (i: number) => {
-    const d = drills[i];
-    setEditingDrillIndex(i);
-    setEditDrillName(d.name);
-    setEditMade(d.made);
-    setEditAttempts(d.attempts);
-  };
-
-  const confirmEditDrill = () => {
-    if (editingDrillIndex === null || !editDrillName || !editMade || !editAttempts) return;
-    const success = Math.round((parseInt(editMade) / parseInt(editAttempts)) * 100);
-    setDrills(prev => prev.map((d, i) =>
-      i === editingDrillIndex ? { name: editDrillName, made: editMade, attempts: editAttempts, success } : d
-    ));
-    setEditingDrillIndex(null);
-    setDirty(true);
-  };
-
-  // ── Inline edit proximity ──────────────────────────────────────────────────
-
-  const editProxTotal = editBuckets.inside1m + editBuckets.one2m + editBuckets.two3m + editBuckets.beyond3m + editBuckets.miss;
-  const editProxSuccess = calcSuccess(editBuckets, editProxTotal);
-
-  const startEditProx = (i: number) => {
-    const d = proxDrills[i];
-    setEditingProxIndex(i);
-    setEditProxName(d.name);
-    setEditProxClub(d.club ?? null);
-    setEditBuckets({ ...d.buckets });
-  };
-
-  const confirmEditProx = () => {
-    if (editingProxIndex === null || !editProxName || editProxTotal === 0) return;
-    setProxDrills(prev => prev.map((d, i) =>
-      i === editingProxIndex ? {
-        name: editProxName,
-        attempts: editProxTotal,
-        buckets: { ...editBuckets },
-        success: editProxSuccess,
-        club: editProxClub ?? undefined,
-      } : d
-    ));
-    setEditingProxIndex(null);
+  const confirmEdit = () => {
+    if (editingIndex === null || !editName) return;
+    if (proximity) {
+      const total = sumGrid(editGrid);
+      if (total === 0) return;
+      setProxDrills(prev => prev.map((d, i) =>
+        i === editingIndex ? {
+          ...d, name: editName, attempts: total,
+          grid: { ...editGrid }, success: successFromGrid(editGrid), club: editClub ?? undefined,
+        } : d
+      ));
+    } else {
+      const d = drills[editingIndex];
+      if (d.grid || sumGrid(editGrid) > 0) {
+        // Grid drill (Putting)
+        const total = sumGrid(editGrid);
+        if (total === 0) return;
+        setDrills(prev => prev.map((dd, i) =>
+          i === editingIndex ? { name: editName, grid: { ...editGrid }, success: successFromGrid(editGrid) } : dd
+        ));
+      } else {
+        // Legacy drill
+        if (!editMade || !editAttempts) return;
+        const success = Math.round((parseInt(editMade) / parseInt(editAttempts)) * 100);
+        setDrills(prev => prev.map((dd, i) =>
+          i === editingIndex ? { name: editName, made: editMade, attempts: editAttempts, success } : dd
+        ));
+      }
+    }
+    setEditingIndex(null);
     setDirty(true);
   };
 
@@ -244,29 +322,151 @@ export default function SessionDetailScreen() {
     if (Platform.OS === 'android') setPickerVisible(false);
     if (selected) setPickerDate(selected);
   };
-
   const confirmDatePick = () => {
     setPickerVisible(false);
     setSessionDate(pickerDate.toISOString());
     setDirty(true);
   };
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
-
   if (!session) {
-    return (
-      <View style={styles.container}>
-        <Text style={{ textAlign: 'center', marginTop: 40, color: '#999' }}>Loading…</Text>
-      </View>
-    );
+    return <View style={styles.container}><Text style={{ textAlign: 'center', marginTop: 40, color: '#999' }}>Loading…</Text></View>;
   }
 
+  // ── Drill card renderer ────────────────────────────────────────────────────
+
+  const renderDrillCard = (d: Drill | ProximityDrill, i: number, isProx: boolean) => {
+    const isEditing = editingIndex === i;
+    const proxDrill = isProx ? (d as ProximityDrill) : null;
+    const stdDrill = !isProx ? (d as Drill) : null;
+    const hasGrid = isProx ? !!proxDrill?.grid : !!stdDrill?.grid;
+    const centerLabel = getCenterLabel(proxDrill?.threshold, session.type);
+
+    if (isEditing) {
+      return (
+        <View key={i} style={styles.editCard}>
+          {/* Suggestions */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(GRID_SUGGESTIONS[session.type] ?? LEGACY_SUGGESTIONS[session.type]?.map(s => s.name) ?? []).map(name => (
+                <TouchableOpacity
+                  key={typeof name === 'string' ? name : (name as any).name}
+                  style={[styles.chip, editName === (typeof name === 'string' ? name : (name as any).name) && styles.chipSelected]}
+                  onPress={() => setEditName(typeof name === 'string' ? name : (name as any).name)}
+                >
+                  <Text style={[styles.chipText, editName === (typeof name === 'string' ? name : (name as any).name) && styles.chipTextSelected]}>
+                    {typeof name === 'string' ? name : (name as any).name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          <TextInput value={editName} onChangeText={setEditName} placeholder="Drill name" style={[styles.input, { marginBottom: 8 }]} />
+
+          {isProx && (
+            <>
+              <Text style={styles.clubLabel}>Club (optional)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {SHORT_GAME_CLUBS.map(c => (
+                    <TouchableOpacity key={c} style={[styles.chip, editClub === c && styles.chipSelected]} onPress={() => setEditClub(editClub === c ? null : c)}>
+                      <Text style={[styles.chipText, editClub === c && styles.chipTextSelected]}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </>
+          )}
+
+          {/* Grid or legacy input */}
+          {(useGrid || hasGrid) ? (
+            <>
+              <GridDisplay
+                grid={editGrid}
+                centerLabel={centerLabel}
+                editable
+                onTap={key => setEditGrid(prev => ({ ...prev, [key]: prev[key] + 1 }))}
+                onLongPress={key => setEditGrid(prev => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }))}
+              />
+              {sumGrid(editGrid) > 0 && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.proxPreview}>
+                    {sumGrid(editGrid)} shots · {successFromGrid(editGrid)}% {session.type === 'Putting' ? 'holed' : `≤${proxDrill?.threshold ?? 2}m`}
+                  </Text>
+                  <TouchableOpacity onPress={() => setEditGrid(emptyGrid())} style={styles.resetBtn}>
+                    <Text style={styles.resetBtnText}>↺ Reset</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.inputRow}>
+              <TextInput value={editMade} onChangeText={setEditMade} placeholder="Made" keyboardType="numeric" style={[styles.input, styles.inputSmall]} />
+              <TextInput value={editAttempts} onChangeText={setEditAttempts} placeholder="Total" keyboardType="numeric" style={[styles.input, styles.inputSmall]} />
+            </View>
+          )}
+
+          <View style={styles.editActions}>
+            <TouchableOpacity onPress={confirmEdit} style={styles.confirmBtn}>
+              <Text style={styles.confirmBtnText}>✓ Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setEditingIndex(null)} style={styles.cancelBtn}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    // View mode
+    return (
+      <View key={i} style={styles.drillRow}>
+        <View style={styles.drillInfo}>
+          {isProx ? (
+            <>
+              <Text style={styles.drillName}>{proxDrill!.name}{proxDrill!.club ? ` · ${proxDrill!.club}` : ''}</Text>
+              {proxDrill!.grid ? (
+                <>
+                  <Text style={styles.drillScore}>{proxDrill!.attempts} shots · {proxDrill!.success}% ≤{proxDrill!.threshold ?? 2}m</Text>
+                  {dominantMiss(proxDrill!.grid) && <Text style={styles.drillMiss}>↳ miss: {dominantMiss(proxDrill!.grid)}</Text>}
+                  <GridDisplay grid={proxDrill!.grid} centerLabel={getCenterLabel(proxDrill!.threshold, session.type)} />
+                </>
+              ) : (
+                // Legacy bucket display
+                <Text style={styles.drillScore}>
+                  {proxDrill!.attempts} shots · {proxDrill!.success}% ·{' '}
+                  ≤1m:{proxDrill!.buckets?.inside1m ?? 0}  1–2m:{proxDrill!.buckets?.one2m ?? 0}  2–3m:{proxDrill!.buckets?.two3m ?? 0}  3m+:{proxDrill!.buckets?.beyond3m ?? 0}
+                </Text>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.drillName}>{stdDrill!.name}</Text>
+              {stdDrill!.grid ? (
+                <>
+                  <Text style={styles.drillScore}>{sumGrid(stdDrill!.grid)} putts · {stdDrill!.success}% holed</Text>
+                  {dominantMiss(stdDrill!.grid) && <Text style={styles.drillMiss}>↳ miss: {dominantMiss(stdDrill!.grid)}</Text>}
+                  <GridDisplay grid={stdDrill!.grid} centerLabel="Holed" />
+                </>
+              ) : (
+                <Text style={styles.drillScore}>{stdDrill!.made}/{stdDrill!.attempts} · {stdDrill!.success}%</Text>
+              )}
+            </>
+          )}
+        </View>
+        <View style={styles.drillActions}>
+          <TouchableOpacity onPress={() => startEdit(i)} style={styles.iconBtn}><Text style={styles.iconBtnText}>✏️</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => isProx ? deleteProxDrill(i) : deleteDrill(i)} style={styles.iconBtn}><Text style={styles.iconBtnText}>🗑</Text></TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const drillList = proximity ? proxDrills : drills;
+  const drillCount = proximity ? proxDrills.length : drills.length;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         {/* Header */}
@@ -302,309 +502,103 @@ export default function SessionDetailScreen() {
           </View>
           <View style={styles.metaBox}>
             <Text style={styles.metaLabel}>Drills</Text>
-            <Text style={styles.metaValue}>{proximity ? proxDrills.length : drills.length}</Text>
+            <Text style={styles.metaValue}>{drillCount}</Text>
           </View>
         </View>
 
-        {/* ── Standard drills ──────────────────────────────────────── */}
-        {!proximity && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Drills</Text>
-              <TouchableOpacity onPress={() => { setAddingDrill(true); setEditingDrillIndex(null); }} style={styles.addChip}>
-                <Text style={styles.addChipText}>+ Add</Text>
-              </TouchableOpacity>
-            </View>
-
-            {drills.length === 0 && !addingDrill && (
-              <Text style={styles.empty}>No drills recorded</Text>
-            )}
-
-            {drills.map((d, i) => (
-              editingDrillIndex === i ? (
-                <View key={i} style={styles.editCard}>
-                  <TextInput
-                    value={editDrillName}
-                    onChangeText={setEditDrillName}
-                    placeholder="Drill name"
-                    style={styles.input}
-                  />
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      value={editMade}
-                      onChangeText={setEditMade}
-                      placeholder="Made"
-                      keyboardType="numeric"
-                      style={[styles.input, styles.inputSmall]}
-                    />
-                    <TextInput
-                      value={editAttempts}
-                      onChangeText={setEditAttempts}
-                      placeholder="Total"
-                      keyboardType="numeric"
-                      style={[styles.input, styles.inputSmall]}
-                    />
-                  </View>
-                  <View style={styles.editActions}>
-                    <TouchableOpacity onPress={confirmEditDrill} style={styles.confirmBtn}>
-                      <Text style={styles.confirmBtnText}>✓ Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setEditingDrillIndex(null)} style={styles.cancelBtn}>
-                      <Text style={styles.cancelBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View key={i} style={styles.drillRow}>
-                  <View style={styles.drillInfo}>
-                    <Text style={styles.drillName}>{d.name}</Text>
-                    <Text style={styles.drillScore}>{d.made}/{d.attempts} · {d.success}%</Text>
-                  </View>
-                  <View style={styles.drillActions}>
-                    <TouchableOpacity onPress={() => startEditDrill(i)} style={styles.iconBtn}>
-                      <Text style={styles.iconBtnText}>✏️</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => deleteDrill(i)} style={styles.iconBtn}>
-                      <Text style={styles.iconBtnText}>🗑</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )
-            ))}
-
-            {/* Add drill form */}
-            {addingDrill && (
-              <View style={styles.editCard}>
-                {standardSuggestions.length > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {standardSuggestions.map(s => (
-                        <TouchableOpacity
-                          key={s.name}
-                          style={[styles.chip, newDrillName === s.name && styles.chipSelected]}
-                          onPress={() => { setNewDrillName(s.name); setNewAttempts(s.attempts); setNewMade(''); }}
-                        >
-                          <Text style={[styles.chipText, newDrillName === s.name && styles.chipTextSelected]}>{s.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                )}
-                <TextInput
-                  value={newDrillName}
-                  onChangeText={setNewDrillName}
-                  placeholder="Drill name"
-                  style={[styles.input, { marginBottom: 8 }]}
-                />
-                <View style={styles.inputRow}>
-                  <TextInput
-                    value={newMade}
-                    onChangeText={setNewMade}
-                    placeholder="Made"
-                    keyboardType="numeric"
-                    style={[styles.input, styles.inputSmall]}
-                  />
-                  <TextInput
-                    value={newAttempts}
-                    onChangeText={setNewAttempts}
-                    placeholder="Total"
-                    keyboardType="numeric"
-                    style={[styles.input, styles.inputSmall]}
-                  />
-                </View>
-                <View style={styles.editActions}>
-                  <TouchableOpacity onPress={confirmAddDrill} style={styles.confirmBtn}>
-                    <Text style={styles.confirmBtnText}>+ Add Drill</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setAddingDrill(false); setNewDrillName(''); setNewMade(''); setNewAttempts(''); }} style={styles.cancelBtn}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+        {/* Drills section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Drills</Text>
+            <TouchableOpacity onPress={() => { setAddingDrill(true); setEditingIndex(null); setNewDrillName(''); setNewGrid(emptyGrid()); setNewProxClub(null); setNewMade(''); setNewAttempts(''); }} style={styles.addChip}>
+              <Text style={styles.addChipText}>+ Add</Text>
+            </TouchableOpacity>
           </View>
-        )}
 
-        {/* ── Proximity drills ──────────────────────────────────────── */}
-        {proximity && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Drills</Text>
-              <TouchableOpacity onPress={() => { setAddingProx(true); setEditingProxIndex(null); }} style={styles.addChip}>
-                <Text style={styles.addChipText}>+ Add</Text>
-              </TouchableOpacity>
-            </View>
+          {proximity && proxDrills.length > 0 && (
+            <Text style={styles.ballTotal}>🎱 {proxDrills.reduce((s, d) => s + d.attempts, 0)} shots total</Text>
+          )}
 
-            {proxDrills.length > 0 && (
-              <Text style={styles.ballTotal}>
-                🎱 {proxDrills.reduce((sum, d) => sum + d.attempts, 0)} balls total
-              </Text>
-            )}
+          {drillCount === 0 && !addingDrill && <Text style={styles.empty}>No drills recorded</Text>}
 
-            {proxDrills.length === 0 && !addingProx && (
-              <Text style={styles.empty}>No drills recorded</Text>
-            )}
+          {drillList.map((d, i) => renderDrillCard(d, i, proximity))}
 
-            {proxDrills.map((d, i) => (
-              editingProxIndex === i ? (
-                <View key={i} style={styles.editCard}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {proxSuggestions.map(s => (
-                        <TouchableOpacity
-                          key={s}
-                          style={[styles.chip, editProxName === s && styles.chipSelected]}
-                          onPress={() => { setEditProxName(s); setEditBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 }); }}
-                        >
-                          <Text style={[styles.chipText, editProxName === s && styles.chipTextSelected]}>{s}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                  <TextInput
-                    value={editProxName}
-                    onChangeText={setEditProxName}
-                    placeholder="Drill name"
-                    style={[styles.input, { marginBottom: 8 }]}
-                  />
+          {/* Add form */}
+          {addingDrill && (
+            <View style={styles.editCard}>
+              {/* Suggestions */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(GRID_SUGGESTIONS[session.type] ?? []).map(name => (
+                    <TouchableOpacity key={name} style={[styles.chip, newDrillName === name && styles.chipSelected]}
+                      onPress={() => { setNewDrillName(name); setNewGrid(emptyGrid()); setNewProxClub(null); }}>
+                      <Text style={[styles.chipText, newDrillName === name && styles.chipTextSelected]}>{name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {(LEGACY_SUGGESTIONS[session.type] ?? []).map(s => (
+                    <TouchableOpacity key={s.name} style={[styles.chip, newDrillName === s.name && styles.chipSelected]}
+                      onPress={() => { setNewDrillName(s.name); setNewAttempts(s.attempts); setNewMade(''); }}>
+                      <Text style={[styles.chipText, newDrillName === s.name && styles.chipTextSelected]}>{s.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              <TextInput value={newDrillName} onChangeText={setNewDrillName} placeholder="Drill name" style={[styles.input, { marginBottom: 8 }]} />
+
+              {proximity && (
+                <>
                   <Text style={styles.clubLabel}>Club (optional)</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {SHORT_GAME_CLUBS.map(c => (
-                        <TouchableOpacity
-                          key={c}
-                          style={[styles.chip, editProxClub === c && styles.chipSelected]}
-                          onPress={() => setEditProxClub(editProxClub === c ? null : c)}
-                        >
-                          <Text style={[styles.chipText, editProxClub === c && styles.chipTextSelected]}>{c}</Text>
+                        <TouchableOpacity key={c} style={[styles.chip, newProxClub === c && styles.chipSelected]} onPress={() => setNewProxClub(newProxClub === c ? null : c)}>
+                          <Text style={[styles.chipText, newProxClub === c && styles.chipTextSelected]}>{c}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
                   </ScrollView>
-                  <View style={styles.bucketRow}>
-                    {([
-                      { key: 'inside1m', label: '≤1m' },
-                      { key: 'one2m', label: '1–2m' },
-                      { key: 'two3m', label: '2–3m' },
-                      { key: 'beyond3m', label: '3m+' },
-                      { key: 'miss', label: '❌' },
-                    ] as { key: keyof ProximityBuckets; label: string }[]).map(({ key, label }) => (
-                      <View key={key} style={styles.bucketItem}>
-                        <Text style={styles.bucketLabel}>{label}</Text>
-                        <TextInput
-                          value={editBuckets[key] === 0 ? '' : String(editBuckets[key])}
-                          onChangeText={v => setEditBuckets(prev => ({ ...prev, [key]: parseInt(v) || 0 }))}
-                          keyboardType="numeric"
-                          style={styles.bucketInput}
-                          placeholder="0"
-                        />
-                      </View>
-                    ))}
-                  </View>
-                  {editProxTotal > 0 && (
-                    <Text style={styles.proxPreview}>{editProxTotal} shots · {editProxSuccess}% inside 2m</Text>
-                  )}
-                  <View style={styles.editActions}>
-                    <TouchableOpacity onPress={confirmEditProx} style={styles.confirmBtn}>
-                      <Text style={styles.confirmBtnText}>✓ Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setEditingProxIndex(null)} style={styles.cancelBtn}>
-                      <Text style={styles.cancelBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View key={i} style={styles.drillRow}>
-                  <View style={styles.drillInfo}>
-                    <Text style={styles.drillName}>{d.name}{d.club ? ` · ${d.club}` : ''}</Text>
-                    <Text style={styles.drillScore}>{d.attempts} balls · {d.success}% inside 2m</Text>
-                    <Text style={styles.drillBuckets}>
-                      ≤1m:{d.buckets.inside1m}  1–2m:{d.buckets.one2m}  2–3m:{d.buckets.two3m}  3m+:{d.buckets.beyond3m}  ❌:{d.buckets.miss ?? 0}
-                    </Text>
-                  </View>
-                  <View style={styles.drillActions}>
-                    <TouchableOpacity onPress={() => startEditProx(i)} style={styles.iconBtn}>
-                      <Text style={styles.iconBtnText}>✏️</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => deleteProxDrill(i)} style={styles.iconBtn}>
-                      <Text style={styles.iconBtnText}>🗑</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )
-            ))}
+                </>
+              )}
 
-            {/* Add prox drill form */}
-            {addingProx && (
-              <View style={styles.editCard}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {proxSuggestions.map(s => (
-                      <TouchableOpacity
-                        key={s}
-                        style={[styles.chip, newProxName === s && styles.chipSelected]}
-                        onPress={() => { setNewProxName(s); setNewBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 }); setNewProxClub(null); }}
-                      >
-                        <Text style={[styles.chipText, newProxName === s && styles.chipTextSelected]}>{s}</Text>
+              {useGrid ? (
+                <>
+                  <GridDisplay
+                    grid={newGrid}
+                    centerLabel={getCenterLabel(defaultThreshold, session.type)}
+                    editable
+                    onTap={key => setNewGrid(prev => ({ ...prev, [key]: prev[key] + 1 }))}
+                    onLongPress={key => setNewGrid(prev => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }))}
+                  />
+                  {sumGrid(newGrid) > 0 && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={styles.proxPreview}>
+                        {sumGrid(newGrid)} shots · {successFromGrid(newGrid)}% {session.type === 'Putting' ? 'holed' : `≤${defaultThreshold}m`}
+                      </Text>
+                      <TouchableOpacity onPress={() => setNewGrid(emptyGrid())} style={styles.resetBtn}>
+                        <Text style={styles.resetBtnText}>↺ Reset</Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-                <TextInput
-                  value={newProxName}
-                  onChangeText={setNewProxName}
-                  placeholder="Drill name (e.g. Chip 10m)"
-                  style={[styles.input, { marginBottom: 8 }]}
-                />
-                <Text style={styles.clubLabel}>Club (optional)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {SHORT_GAME_CLUBS.map(c => (
-                      <TouchableOpacity
-                        key={c}
-                        style={[styles.chip, newProxClub === c && styles.chipSelected]}
-                        onPress={() => setNewProxClub(newProxClub === c ? null : c)}
-                      >
-                        <Text style={[styles.chipText, newProxClub === c && styles.chipTextSelected]}>{c}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-                <View style={styles.bucketRow}>
-                  {([
-                    { key: 'inside1m', label: '≤1m' },
-                    { key: 'one2m', label: '1–2m' },
-                    { key: 'two3m', label: '2–3m' },
-                    { key: 'beyond3m', label: '3m+' },
-                    { key: 'miss', label: '❌' },
-                  ] as { key: keyof ProximityBuckets; label: string }[]).map(({ key, label }) => (
-                    <View key={key} style={styles.bucketItem}>
-                      <Text style={styles.bucketLabel}>{label}</Text>
-                      <TextInput
-                        value={newBuckets[key] === 0 ? '' : String(newBuckets[key])}
-                        onChangeText={v => setNewBuckets(prev => ({ ...prev, [key]: parseInt(v) || 0 }))}
-                        keyboardType="numeric"
-                        style={styles.bucketInput}
-                        placeholder="0"
-                      />
                     </View>
-                  ))}
+                  )}
+                </>
+              ) : (
+                <View style={styles.inputRow}>
+                  <TextInput value={newMade} onChangeText={setNewMade} placeholder="Made" keyboardType="numeric" style={[styles.input, styles.inputSmall]} />
+                  <TextInput value={newAttempts} onChangeText={setNewAttempts} placeholder="Total" keyboardType="numeric" style={[styles.input, styles.inputSmall]} />
                 </View>
-                {newProxTotal > 0 && (
-                  <Text style={styles.proxPreview}>{newProxTotal} shots · {newProxSuccess}% inside 2m</Text>
-                )}
-                <View style={styles.editActions}>
-                  <TouchableOpacity onPress={confirmAddProx} style={styles.confirmBtn}>
-                    <Text style={styles.confirmBtnText}>+ Add Drill</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => { setAddingProx(false); setNewProxName(''); setNewProxClub(null); setNewBuckets({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 }); }} style={styles.cancelBtn}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
+              )}
+
+              <View style={styles.editActions}>
+                <TouchableOpacity onPress={confirmAddDrill} style={styles.confirmBtn}>
+                  <Text style={styles.confirmBtnText}>+ Add Drill</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setAddingDrill(false)} style={styles.cancelBtn}>
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
-        )}
+            </View>
+          )}
+        </View>
 
         {/* Notes */}
         <View style={styles.section}>
@@ -618,11 +612,9 @@ export default function SessionDetailScreen() {
           />
         </View>
 
-        {/* Save button — always visible */}
         <TouchableOpacity onPress={saveSession} style={styles.saveFullBtn}>
           <Text style={styles.saveFullBtnText}>💾 Save Session</Text>
         </TouchableOpacity>
-
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -632,39 +624,48 @@ export default function SessionDetailScreen() {
           <View style={styles.pickerOverlay}>
             <View style={styles.pickerSheet}>
               <View style={styles.pickerHeader}>
-                <TouchableOpacity onPress={() => setPickerVisible(false)}>
-                  <Text style={styles.pickerCancel}>Cancel</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setPickerVisible(false)}><Text style={styles.pickerCancel}>Cancel</Text></TouchableOpacity>
                 <Text style={styles.pickerTitle}>Select Date</Text>
-                <TouchableOpacity onPress={confirmDatePick}>
-                  <Text style={styles.pickerDone}>Done</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmDatePick}><Text style={styles.pickerDone}>Done</Text></TouchableOpacity>
               </View>
-              <DateTimePicker
-                value={pickerDate}
-                mode="date"
-                display="spinner"
-                onChange={onPickerChange}
-                maximumDate={new Date()}
-                style={{ height: 200 }}
-              />
+              <DateTimePicker value={pickerDate} mode="date" display="spinner" onChange={onPickerChange} maximumDate={new Date()} style={{ height: 200 }} />
             </View>
           </View>
         </Modal>
       ) : (
         pickerVisible && (
-          <DateTimePicker
-            value={pickerDate}
-            mode="date"
-            display="default"
+          <DateTimePicker value={pickerDate} mode="date" display="default"
             onChange={(e, d) => { onPickerChange(e, d); if (d) { setPickerDate(d); confirmDatePick(); } }}
-            maximumDate={new Date()}
-          />
+            maximumDate={new Date()} />
         )
       )}
     </KeyboardAvoidingView>
   );
 }
+
+// ── Grid styles ───────────────────────────────────────────────────────────────
+
+const gridStyles = StyleSheet.create({
+  container: { marginBottom: 8, gap: 3 },
+  row: { flexDirection: 'row', gap: 3 },
+  cell: {
+    flex: 1, minHeight: 54, backgroundColor: '#f5f5f5', borderRadius: 8,
+    borderWidth: 1, borderColor: '#e0e0e0', alignItems: 'center', justifyContent: 'center', padding: 4,
+  },
+  centerCell: { backgroundColor: '#e8f5e9', borderColor: '#a5d6a7' },
+  activeCell: { backgroundColor: '#fff8e1', borderColor: '#ffc107' },
+  centerActiveCell: { backgroundColor: '#c8e6c9', borderColor: '#4CAF50' },
+  readOnly: { opacity: 0.9 },
+  label: { fontSize: 10, color: '#666', textAlign: 'center', fontWeight: '500', lineHeight: 13 },
+  centerLabelText: { fontSize: 11, color: '#2e7d32', fontWeight: '700' },
+  count: { fontSize: 20, fontWeight: 'bold', color: '#e65100', marginTop: 1 },
+  centerCount: { color: '#2e7d32' },
+  zeroCount: { fontSize: 14, color: '#ccc', fontWeight: '400' },
+  hint: { fontSize: 8, color: '#bbb', marginTop: 1 },
+  editHint: { fontSize: 10, color: '#aaa', textAlign: 'center', marginTop: 4 },
+});
+
+// ── Screen styles ─────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
@@ -674,8 +675,6 @@ const styles = StyleSheet.create({
   backBtn: { marginRight: 12 },
   backText: { fontSize: 15, color: '#4CAF50', fontWeight: '600' },
   title: { flex: 1, fontSize: 20, fontWeight: 'bold', color: '#222' },
-  saveBtn: { backgroundColor: '#4CAF50', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
-  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   metaRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
   metaBox: { flex: 1, backgroundColor: '#f0f4f0', borderRadius: 12, padding: 12, alignItems: 'center' },
@@ -692,11 +691,11 @@ const styles = StyleSheet.create({
   empty: { color: '#bbb', textAlign: 'center', marginVertical: 12, fontSize: 14 },
   ballTotal: { fontSize: 13, fontWeight: '700', color: '#4CAF50', textAlign: 'center', marginBottom: 8 },
 
-  drillRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  drillRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', flexDirection: 'row', alignItems: 'flex-start' },
   drillInfo: { flex: 1 },
   drillName: { fontSize: 15, fontWeight: '600', color: '#222' },
   drillScore: { fontSize: 13, color: '#4CAF50', marginTop: 2 },
-  drillBuckets: { fontSize: 11, color: '#999', marginTop: 2 },
+  drillMiss: { fontSize: 12, color: '#e65100', marginTop: 2, marginBottom: 6 },
   drillActions: { flexDirection: 'row', gap: 4, marginLeft: 8 },
   iconBtn: { padding: 6 },
   iconBtnText: { fontSize: 16 },
@@ -710,14 +709,11 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
   chipText: { fontSize: 13, color: '#555' },
   chipTextSelected: { color: '#fff', fontWeight: '600' },
-
   clubLabel: { fontSize: 12, fontWeight: '700', color: '#555', marginBottom: 6 },
 
-  bucketRow: { flexDirection: 'row', gap: 6, marginBottom: 8 },
-  bucketItem: { flex: 1, alignItems: 'center' },
-  bucketLabel: { fontSize: 11, fontWeight: '700', color: '#555', marginBottom: 4 },
-  bucketInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 8, fontSize: 15, backgroundColor: '#fff', textAlign: 'center', width: '100%' },
-  proxPreview: { fontSize: 13, color: '#4CAF50', fontWeight: '600', textAlign: 'center', marginBottom: 8 },
+  proxPreview: { fontSize: 13, color: '#4CAF50', fontWeight: '600', flex: 1 },
+  resetBtn: { paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#f0f0f0', borderRadius: 8 },
+  resetBtnText: { fontSize: 12, color: '#666', fontWeight: '600' },
 
   editActions: { flexDirection: 'row', gap: 10 },
   confirmBtn: { flex: 1, backgroundColor: '#4CAF50', padding: 12, borderRadius: 10, alignItems: 'center' },
@@ -726,7 +722,6 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: '#555', fontWeight: '600', fontSize: 14 },
 
   notesInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 14, backgroundColor: '#fafafa', minHeight: 80 },
-
   saveFullBtn: { backgroundColor: '#4CAF50', padding: 16, borderRadius: 14, marginTop: 4 },
   saveFullBtnText: { color: '#fff', textAlign: 'center', fontSize: 16, fontWeight: 'bold' },
 

@@ -1,22 +1,13 @@
 /**
  * Golf Tracker Type Definitions
- *
- * All data types used throughout the golf tracker app for type-safe storage
- * and retrieval from AsyncStorage.
  */
 
-/**
- * Tee course rating and slope for a specific tee color
- */
 export interface TeeData {
   par: number | null;
   rating: number | null;
   slope: number | null;
 }
 
-/**
- * Definition of a single hole at a course
- */
 export interface HoleDefinition {
   hole: number;
   par: number;
@@ -24,9 +15,6 @@ export interface HoleDefinition {
   distanceByTee?: Record<string, number>;
 }
 
-/**
- * A golf course with tee options and hole information
- */
 export interface Course {
   id: string;
   name: string;
@@ -37,35 +25,63 @@ export interface Course {
 }
 
 /**
- * A single drill tracked during a practice session (Putting / Long Game)
+ * Direction grid — 3×3 tap counter
+ * Layout (Long on top, Short on bottom):
+ *   longLeft  | long  | longRight
+ *   left      | center| right
+ *   shortLeft | short | shortRight
+ *
+ * center = Holed (Putting) or ≤Xm ✓ (Chipping/Pitching)
+ */
+export interface DirectionGrid {
+  longLeft: number;
+  long: number;
+  longRight: number;
+  left: number;
+  center: number;
+  right: number;
+  shortLeft: number;
+  short: number;
+  shortRight: number;
+}
+
+/**
+ * A single drill tracked during a practice session (Putting / Long Game / Short Game)
  */
 export interface Drill {
   name: string;
-  made: string;
-  attempts: string;
+  // New: direction grid (Putting)
+  grid?: DirectionGrid;
+  // Legacy: made/attempts (Long Game / Short Game, and old Putting data)
+  made?: string;
+  attempts?: string;
   success: number;
 }
 
 /**
- * Proximity outcome buckets for a short-game drill
+ * Legacy proximity buckets — kept for backward compatibility
  */
 export interface ProximityBuckets {
-  inside1m: number;  // ≤1m from flag
-  one2m: number;     // 1–2m
-  two3m: number;     // 2–3m
-  beyond3m: number;  // 3m+
-  miss: number;      // off green / missed entirely
+  inside1m: number;
+  one2m: number;
+  two3m: number;
+  beyond3m: number;
+  miss: number;
 }
 
 /**
  * A single drill tracked during a Chipping or Pitching session
  */
 export interface ProximityDrill {
-  name: string;           // e.g. "Chip 10m"
-  attempts: number;       // total shots
-  buckets: ProximityBuckets;
-  success: number;        // % of shots inside 2m
-  club?: string;          // optional club used (e.g. "SW", "PW")
+  name: string;
+  attempts: number;       // total shots = sum of grid cells
+  // New: direction grid
+  grid?: DirectionGrid;
+  threshold?: number;     // adaptive target in metres: 1, 2, or 3
+  // Legacy bucket data (kept for backward compat with old sessions)
+  buckets?: ProximityBuckets;
+  success: number;        // % of shots in center zone
+  club?: string;
 }
 
 /**
