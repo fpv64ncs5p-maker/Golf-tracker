@@ -81,12 +81,14 @@ const dominantMiss = (g: DirectionGrid): string | null => {
 // Adaptive threshold: looks at last 5 sessions of this type with grid data.
 // Tightens target (3→2→1m) if avg success ≥ 60%, loosens if < 25%.
 const calcAdaptiveThreshold = (sessions: PracticeSession[], type: string): number => {
+  // Include both new (grid) and old (bucket) sessions — old ones count as threshold=2
   const relevant = sessions
-    .filter(s => s.type === type && (s.proximityDrills ?? []).some(d => d.grid));
+    .filter(s => s.type === type && (s.proximityDrills ?? []).some(d => d.grid || d.buckets));
   if (relevant.length < 3) return 2; // default until enough data
   const last5 = relevant.slice(-5);
-  const allDrills = last5.flatMap(s => s.proximityDrills ?? []).filter(d => d.grid);
+  const allDrills = last5.flatMap(s => s.proximityDrills ?? []).filter(d => d.grid || d.buckets);
   if (allDrills.length === 0) return 2;
+  // Current threshold: take from most recent grid drill, or default 2 for old bucket drills
   const currentThreshold = [...allDrills].reverse().find(d => d.threshold != null)?.threshold ?? 2;
   const avgSuccess = allDrills.reduce((sum, d) => sum + d.success, 0) / allDrills.length;
   if (avgSuccess >= 60 && currentThreshold > 1) return currentThreshold - 1;
