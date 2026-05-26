@@ -168,10 +168,6 @@ export default function DashboardScreen() {
           <Text style={styles.summaryNum}>{rs.total}</Text>
           <Text style={styles.summaryLabel}>Rounds</Text>
         </View>
-        <View style={styles.summaryBox}>
-          <Text style={styles.summaryNum}>{formatTime(sessions.reduce((s: number, x: any) => s + x.duration, 0))}</Text>
-          <Text style={styles.summaryLabel}>Practice Time</Text>
-        </View>
       </View>
 
       {/* Tabs */}
