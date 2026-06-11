@@ -15,7 +15,7 @@ export default function StartScreen() {
     getDraftRound().then(setDraftRound);
   }, []));
 
-  const types = ["Putting", "Chipping", "Pitching", "Long Game"];
+  const types = ["Putting", "Chipping", "Pitching", "Long Game", "Range Drill"];
 
   const resumeRound = () => {
     if (!draftRound) return;
@@ -47,7 +47,13 @@ export default function StartScreen() {
       <TouchableOpacity
         style={[styles.startButton, !selected && styles.disabled]}
         disabled={!selected}
-        onPress={() => router.push({ pathname: '/session', params: { type: selected } })}
+        onPress={() => {
+          if (selected === 'Range Drill') {
+            router.push('/range-drill');
+          } else {
+            router.push({ pathname: '/session', params: { type: selected } });
+          }
+        }}
       >
         <Text style={styles.startText}>Start Session</Text>
       </TouchableOpacity>

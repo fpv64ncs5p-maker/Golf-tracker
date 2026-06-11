@@ -13,6 +13,7 @@ import type {
   Course,
   ClubDistance,
   DraftRound,
+  RangeDrill,
 } from '../types';
 
 // ── Generic Supabase helpers ────────────────────────────────────────────────
@@ -88,6 +89,17 @@ export async function saveClubDistances(
   data: Record<string, ClubDistance>
 ): Promise<void> {
   await saveToSupabase('club_distances', data);
+}
+
+// ── Range Drills ─────────────────────────────────────────────────────────────
+
+export async function getRangeDrills(): Promise<RangeDrill[]> {
+  const result = await getFromSupabase<RangeDrill[]>('range_drills');
+  return result ?? [];
+}
+
+export async function saveRangeDrills(drills: RangeDrill[]): Promise<void> {
+  await saveToSupabase('range_drills', drills);
 }
 
 // ── Draft Round (stays local — transient data) ───────────────────────────────

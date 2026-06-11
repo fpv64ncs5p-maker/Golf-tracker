@@ -187,6 +187,37 @@ export type DraftRound = Round & {
 };
 
 /**
+ * A single shot in a driving range drill
+ */
+export interface RangeDrillShot {
+  club: string;
+  distance: number | null;
+}
+
+/**
+ * A single hole in a driving range drill
+ */
+export interface RangeDrillHole {
+  hole: number;
+  par: number;
+  courseDistance: number | null;
+  shots: RangeDrillShot[];
+}
+
+/**
+ * A complete driving range drill session (course simulation)
+ */
+export interface RangeDrill {
+  id: string;
+  courseId: string;
+  courseName: string;
+  date: string;
+  duration: number;
+  notes: string;
+  holes: RangeDrillHole[];
+}
+
+/**
  * Club distance and characteristics from Trackman session
  */
 export interface ClubDistance {
