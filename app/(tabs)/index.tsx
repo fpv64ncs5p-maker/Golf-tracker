@@ -49,7 +49,7 @@ export default function StartScreen() {
         disabled={!selected}
         onPress={() => {
           if (selected === 'Range Drill') {
-            router.push('/range-drill');
+            router.push('/range-drill' as any);
           } else {
             router.push({ pathname: '/session', params: { type: selected } });
           }
