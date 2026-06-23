@@ -18,21 +18,31 @@ A personal golf training tracker app built with **React Native + Expo**, designe
 - **Framework**: React Native with Expo (managed workflow)
 - **Routing**: Expo Router (file-based — each file in `/app` = a screen)
 - **Language**: TypeScript (.tsx files)
-- **Storage**: AsyncStorage (local, per device — web and phone are separate)
-- **Dev tools**: Node.js, VS Code, Expo Go (iPhone testing via QR code)
-- **Testing**: Expo Go app on iPhone — always test on phone, not web
+- **Storage**: **Supabase** (cloud) for all saved data — sessions, rounds, courses, club distances, range drills. **AsyncStorage** only for the transient draft round (per device). Keys/URL in `.env.local` (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`).
+- **Hosting**: **Vercel** — the app runs as a deployed **web app** (used in the phone browser).
+- **Dev tools**: Node.js, VS Code
 
 ---
 
-## Running the App
+## Running & Deploying
+
+**Primary usage:** the **deployed Vercel web app**, opened in the phone browser.
+
+**To ship a change:** commit and push to `main` — Vercel auto-deploys on push.
+```bash
+git add -A && git commit -m "..." && git push
+```
+
+**Local preview (optional):**
 ```bash
 cd golf-tracker
-npx expo start        # same WiFi as phone
-npx expo start --tunnel  # different network (requires @expo/ngrok)
+npx expo start --web     # run in a browser on the Mac
 ```
-- Press `r` in terminal to force reload
-- Press `t` to switch to tunnel mode
-- If on a different network: use iPhone as hotspot, connect Mac to it, then `npx expo start`
+
+**Manual web build (what Vercel runs):**
+```bash
+npx expo export --platform web   # outputs to dist/
+```
 
 ---
 

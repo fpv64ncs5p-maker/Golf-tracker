@@ -58,16 +58,23 @@ Rounds automatically inherit CR & Slope from the course/tee when the rating isn'
 
 ## Running the App
 
+The app runs as a **web app deployed on Vercel** and is used in the phone browser. Vercel auto-deploys on every push to `main`:
+
 ```bash
-npm install
-npx expo start
+git add -A && git commit -m "..." && git push
 ```
 
-Scan the QR code with **Expo Go** on your phone, or run on an iOS/Android simulator.
+To preview locally in a browser:
+
+```bash
+npm install
+npx expo start --web
+```
 
 ## Tech Stack
 
 - React Native + Expo (managed workflow)
 - Expo Router (file-based navigation)
-- AsyncStorage (local device storage — no backend)
+- **Supabase** for saved data (cloud); AsyncStorage only for the in-progress draft round
+- Deployed on **Vercel** (web)
 - TypeScript

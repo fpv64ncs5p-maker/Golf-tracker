@@ -127,9 +127,10 @@ export default function InsightsScreen() {
     // Calculate score differential for each round
     const differentials = recent.map((r: Round) => {
       const grossScore = r.coursePar + (r.stats?.scoreVsPar ?? 0);
-      // For 9-hole rounds on 18-hole courses, use half the CR/Slope
-      // (stored CR is the full 18-hole value, so we need the 9-hole equivalent)
-      const isNineOnEighteen = r.holes === 9 && r.coursePar > 20;
+      // Halve the CR only when it's a full-18 rating used for a 9-hole round.
+      // Detect by magnitude: 18-hole CRs are ~59–72, true 9-hole CRs are ~23–36.
+      // (coursePar can't tell them apart — a real 9-hole par is ~36, same as half of 72.)
+      const isNineOnEighteen = r.holes === 9 && (r.courseRating ?? 0) > 55;
       const effectiveCR = isNineOnEighteen ? (r.courseRating ?? 0) / 2 : (r.courseRating ?? 0);
       const effectiveSlope = r.slopeRating ?? 113; // slope doesn't need halving
       let diff = (grossScore - effectiveCR) * 113 / effectiveSlope;
@@ -233,29 +234,15 @@ export default function InsightsScreen() {
     return { sorted, withAccuracy, weakest, mostPenalized, missTendency, mostUsed, totalStrokes: allStrokes.length };
   };
 
-  // Identify yardage ranges where club accuracy is weak
+  // Identify clubs with weak accuracy, annotated with their carry from the live bag data
   const calcYardageGaps = (clubStats: any) => {
     if (!clubStats?.withAccuracy || clubStats.withAccuracy.length === 0) return null;
 
-    // Rough carry distances by club (from your bag)
-    const clubRanges: Record<string, { min: number; max: number }> = {
-      'Driver': { min: 85, max: 95 },
-      '3W': { min: 80, max: 85 },
-      '5W': { min: 105, max: 112 },
-      '4H': { min: 95, max: 100 },
-      '5i': { min: 100, max: 105 },
-      '6i': { min: 100, max: 108 },
-      '7i': { min: 82, max: 88 },
-      '8i': { min: 100, max: 108 },
-      '9i': { min: 107, max: 112 },
-      'PW': { min: 72, max: 76 },
-      'SW': { min: 95, max: 100 },
-    };
-
     const weak = clubStats.withAccuracy.filter((c: any) => c.accuracy < 60);
-    const gaps = weak
-      .map((w: any) => clubRanges[w.club] ? `${w.club} (${clubRanges[w.club].min}–${clubRanges[w.club].max}m)` : null)
-      .filter(Boolean);
+    const gaps = weak.map((w: any) => {
+      const carry = parseInt(clubDistances[w.club]?.carry ?? '');
+      return carry ? `${w.club} (~${carry}m carry)` : w.club;
+    });
 
     return gaps.length > 0 ? gaps : null;
   };
@@ -377,9 +364,9 @@ export default function InsightsScreen() {
           <Text style={styles.sub}>
             {(() => {
               const enriched = rounds.map(enrichRound);
-              const valid = enriched.filter((r: any) => r.courseRating && r.slopeRating && r.coursePar);
+              const valid = enriched.filter((r: any) => r.courseRating && r.slopeRating && r.coursePar && r.stats?.scoreVsPar != null);
               if (rounds.length === 0) return 'Log some rounds to get started';
-              if (valid.length < 3) return `${valid.length} of ${rounds.length} rounds have CR & Slope — need 3 qualifying rounds (${valid.length}/3)`;
+              if (valid.length < 3) return `${valid.length} of ${rounds.length} rounds qualify — need 3 with CR, Slope & a saved score (${valid.length}/3)`;
               return 'Not enough qualifying rounds yet';
             })()}
           </Text>
@@ -505,6 +492,9 @@ export default function InsightsScreen() {
             <Text style={styles.body}>Chipping: {stats.typeCount.Chipping} sessions</Text>
             <Text style={styles.body}>Pitching: {stats.typeCount.Pitching} sessions</Text>
             <Text style={styles.body}>Long Game: {stats.typeCount['Long Game']} sessions</Text>
+            {stats.typeCount['Short Game'] > 0 && (
+              <Text style={styles.body}>Short Game: {stats.typeCount['Short Game']} sessions</Text>
+            )}
           </View>
 
           <View style={styles.card}>
