@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getRounds, saveRounds } from '../services/storage';
 import type { Round, HoleData, RoundStats } from '../types';
@@ -38,7 +38,8 @@ export default function RoundDetailScreen() {
       }
     };
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
 
   // Auto-enter edit mode once round is loaded (when launched from dashboard Edit button)
   useEffect(() => {
@@ -48,7 +49,8 @@ export default function RoundDetailScreen() {
       setEditedHoles(JSON.parse(JSON.stringify(round.holeData)));
       setEditMode(true);
     }
-  }, [round]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round]); // intentionally only re-runs when the round loads
 
   const startEdit = () => {
     if (!round) return;

@@ -72,7 +72,7 @@ const dominantMiss = (g: DirectionGrid): string | null => {
 };
 
 const isProximityType = (type: string) => type === 'Chipping' || type === 'Pitching';
-const useGridInput = (type: string) => type === 'Putting' || isProximityType(type);
+const isGridType = (type: string) => type === 'Putting' || isProximityType(type);
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60);
@@ -176,7 +176,8 @@ export default function SessionDetailScreen() {
   const [editMade, setEditMade] = useState('');
   const [editAttempts, setEditAttempts] = useState('');
 
-  useEffect(() => { loadSession(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadSession(); }, []); // run once on mount
 
   const loadSession = async () => {
     const all = await getSessions();
@@ -192,7 +193,7 @@ export default function SessionDetailScreen() {
   };
 
   const proximity = session ? isProximityType(session.type) : false;
-  const useGrid = session ? useGridInput(session.type) : false;
+  const useGrid = session ? isGridType(session.type) : false;
   const defaultThreshold = 2;
 
   const getCenterLabel = (threshold?: number, type?: string) => {

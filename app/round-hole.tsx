@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { getDraftRound, saveDraftRound, getClubDistances } from '../services/storage';
-import type { Stroke, HoleData, DraftRound, ClubDistance } from '../types';
+import { getDraftRound, saveDraftRound, getClubDistances, clearDraftRound } from '../services/storage';
+import type { Stroke, HoleData, ClubDistance } from '../types';
 
 const CLUBS = [
   'Driver', '3W', '5W', '4H', '5H',
@@ -53,6 +53,8 @@ export default function RoundHoleScreen() {
   const [savedHoles, setSavedHoles] = useState<HoleData[]>([]);
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
   const [showRules, setShowRules] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [putts, setPutts] = useState(0);
   const [puttDirection, setPuttDirection] = useState<string | null>(null);
@@ -198,24 +200,33 @@ export default function RoundHoleScreen() {
     return { match, layup };
   };
 
-  const confirmExitRound = () => {
-    if (Platform.OS === 'web') {
-      const choice = window.confirm('Finish & Save round with holes logged so far?\n\nOK = Finish & Save  |  Cancel = Keep Playing');
-      if (choice) {
-        router.push('/round-complete');
-      }
-    } else {
-      Alert.alert(
-        'What would you like to do?',
-        'Your holes logged so far are saved.',
-        [
-          { text: 'Keep Playing', style: 'cancel' },
-          { text: 'Finish & Save Now', onPress: () => router.push('/round-complete') },
-          { text: 'Exit (continue later)', style: 'destructive', onPress: () => router.push('/') },
-        ]
-      );
-    }
+  const openMenu = () => {
+    setConfirmDiscard(false);
+    setShowMenu(true);
   };
+
+  const closeMenu = () => {
+    setShowMenu(false);
+    setConfirmDiscard(false);
+  };
+
+  // Resume = just keep playing (dismiss the menu)
+  const resumeRound = () => closeMenu();
+
+  // Save & Finish = go to the summary screen, where the round is saved to the dashboard
+  const saveAndFinish = () => {
+    closeMenu();
+    router.push('/round-complete');
+  };
+
+  // Discard = throw away the in-progress round entirely. Never touches the dashboard.
+  const discardRound = async () => {
+    await clearDraftRound();
+    closeMenu();
+    router.replace('/');
+  };
+
+  const holesLogged = savedHoles.length;
 
   const caddieAdvice = getCaddieAdvice();
   // Keep caddieClub for club picker highlighting (backwards compat)
@@ -246,10 +257,55 @@ export default function RoundHoleScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Exit round */}
-      <TouchableOpacity onPress={confirmExitRound} style={styles.exitBtn}>
-        <Text style={styles.exitText}>✕ Exit Round</Text>
+      {/* Round options */}
+      <TouchableOpacity onPress={openMenu} style={styles.optionsBtn}>
+        <Text style={styles.optionsText}>⚙ Round Options</Text>
       </TouchableOpacity>
+
+      {/* Round options menu */}
+      <Modal visible={showMenu} transparent animationType="fade" onRequestClose={closeMenu}>
+        <TouchableOpacity style={styles.menuBackdrop} activeOpacity={1} onPress={closeMenu}>
+          <TouchableOpacity style={styles.menuCard} activeOpacity={1} onPress={() => {}}>
+            {!confirmDiscard ? (
+              <>
+                <Text style={styles.menuTitle}>Round Options</Text>
+                <Text style={styles.menuSub}>
+                  {holesLogged}/{total} holes logged so far
+                </Text>
+
+                <TouchableOpacity style={[styles.menuBtn, styles.menuResume]} onPress={resumeRound}>
+                  <Text style={styles.menuResumeText}>▶  Resume — keep playing</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.menuBtn, styles.menuSave]} onPress={saveAndFinish}>
+                  <Text style={styles.menuSaveText}>🏁  Save & Finish</Text>
+                </TouchableOpacity>
+                <Text style={styles.menuHint}>Saves this round to your dashboard.</Text>
+
+                <TouchableOpacity style={[styles.menuBtn, styles.menuDiscard]} onPress={() => setConfirmDiscard(true)}>
+                  <Text style={styles.menuDiscardText}>🗑  Discard Round</Text>
+                </TouchableOpacity>
+                <Text style={styles.menuHint}>Deletes it completely — never added to the dashboard.</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.menuTitle}>Discard this round?</Text>
+                <Text style={styles.menuSub}>
+                  This permanently deletes the {holesLogged} hole{holesLogged === 1 ? '' : 's'} logged so far. This cannot be undone.
+                </Text>
+
+                <TouchableOpacity style={[styles.menuBtn, styles.menuDiscard]} onPress={discardRound}>
+                  <Text style={styles.menuDiscardText}>🗑  Yes, discard it</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.menuBtn, styles.menuResume]} onPress={() => setConfirmDiscard(false)}>
+                  <Text style={styles.menuResumeText}>← Keep playing</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Hole progress strip */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeStrip} contentContainerStyle={styles.holeStripContent}>
@@ -548,8 +604,21 @@ export default function RoundHoleScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, backgroundColor: '#fff' },
-  exitBtn: { alignSelf: 'flex-start', marginBottom: 8 },
-  exitText: { fontSize: 13, color: '#999', fontWeight: '500' },
+  optionsBtn: { alignSelf: 'flex-start', marginBottom: 8, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, backgroundColor: '#f0f0f0' },
+  optionsText: { fontSize: 13, color: '#555', fontWeight: '600' },
+  // Round options menu
+  menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 24 },
+  menuCard: { backgroundColor: '#fff', borderRadius: 18, padding: 20 },
+  menuTitle: { fontSize: 20, fontWeight: 'bold', color: '#111', textAlign: 'center' },
+  menuSub: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 4, marginBottom: 16 },
+  menuBtn: { width: '100%', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  menuResume: { backgroundColor: '#1565C0' },
+  menuResumeText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  menuSave: { backgroundColor: '#4CAF50' },
+  menuSaveText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  menuDiscard: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#e53935' },
+  menuDiscardText: { color: '#e53935', fontSize: 16, fontWeight: '700' },
+  menuHint: { fontSize: 11, color: '#aaa', textAlign: 'center', marginTop: 4 },
   holeStrip: { marginHorizontal: -24, marginBottom: 16, marginTop: 8 },
   holeStripContent: { paddingHorizontal: 24, gap: 6, flexDirection: 'row', alignItems: 'center' },
   holeChip: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', minWidth: 40 },

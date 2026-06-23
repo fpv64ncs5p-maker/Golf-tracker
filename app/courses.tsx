@@ -40,7 +40,8 @@ export default function CoursesScreen() {
   const [teeRating, setTeeRating] = useState('');
   const [teeSlope, setTeeSlope] = useState('');
 
-  useEffect(() => { loadCourses(); loadRounds(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadCourses(); loadRounds(); }, []); // run once on mount
 
   const loadCourses = async () => {
     const data = await getCourses();

@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback } from 'react';
 import { getSessions, getRounds, getCourses, getClubDistances } from '../../services/storage';
 import type { PracticeSession, Round, Course, ClubDistance } from '../../types';
 

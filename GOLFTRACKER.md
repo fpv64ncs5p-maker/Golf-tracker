@@ -1,5 +1,14 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
+## Maintenance Log
+- **2026-06-23** — Code health pass:
+  - Fixed crash bug in `session.tsx` (undefined `threshold` → `actualThreshold` in the live grid summary).
+  - Fixed `(tabs)/dashboard.tsx` `flatMap` union typing.
+  - Renamed helper `useGridInput` → `isGridType` in `session-detail.tsx` (the `use` prefix made the linter treat it as a hook).
+  - Deleted stray untracked `app/dashboard.tsx` (old AsyncStorage version that collided with the tabbed dashboard on `/dashboard`).
+  - Cleaned all lint warnings → 0 (ternary-statements to if/else, unused imports, run-once `useEffect` documented with eslint-disable).
+  - **Note:** 2 remaining tsc errors for `/session-detail` come from a stale Expo Router type cache (`.expo/types/router.d.ts`). They clear automatically on the next `npx expo start` — not a code bug.
+
 ## Overview
 A personal golf training tracker app built with **React Native + Expo**, designed for use on iPhone during practice sessions and rounds. Built collaboratively by Jo and Claude, learning to code along the way.
 
@@ -103,6 +112,11 @@ app/
 - **Approach miss direction**: Left / Right / Short / Long — shown when putts > 0 AND GIR missed (i.e. after you're on the green, looking back at where the approach landed)
 - Score vs par shown live
 - Saves hole data to `draftRound`, navigates to next hole
+- **⚙ Round Options menu** (top of screen, available at any moment) — modal with three clear actions, consistent on web + phone:
+  - **Resume** → close menu, keep playing
+  - **Save & Finish** → go to round-complete (saves round to dashboard)
+  - **Discard Round** → two-step confirm, then `clearDraftRound()` and back home — never added to the dashboard
+  - Replaced the old "✕ Exit Round" link, which on web could only save (forcing save-then-delete to abandon a round)
 
 ### 🏁 Round Complete (`round-complete.tsx`)
 - Auto-calculates: total strokes, score vs par, FIR%, GIR%, putts/hole, Par 3 GIR

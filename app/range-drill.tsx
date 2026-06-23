@@ -75,7 +75,7 @@ export default function RangeDrillScreen() {
   const startDrill = (course: Course) => {
     if (!course.holes || course.holes.length === 0) {
       const msg = 'This course has no hole data. Add holes in Manage Courses first.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('No hole data', msg);
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('No hole data', msg);
       return;
     }
     setSelectedCourse(course);
@@ -91,7 +91,7 @@ export default function RangeDrillScreen() {
   const addShot = () => {
     if (!selectedClub) {
       const msg = 'Select a club before adding a shot.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('No club selected', msg);
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('No club selected', msg);
       return;
     }
     const dist = distanceInput ? parseInt(distanceInput) : null;
@@ -107,7 +107,7 @@ export default function RangeDrillScreen() {
   const onGreen = () => {
     if (currentShots.length === 0) {
       const msg = 'Add at least one shot before marking this hole complete.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('No shots logged', msg);
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('No shots logged', msg);
       return;
     }
     const finishedHole: RangeDrillHole = {

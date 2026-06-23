@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Pressable,
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { getSessions, saveSessions, getRounds, saveRounds } from '../../services/storage';
-import type { PracticeSession, Round } from '../../types';
+import type { PracticeSession, Round, Drill, ProximityDrill } from '../../types';
 import { router } from 'expo-router';
 
 export default function DashboardScreen() {
@@ -150,7 +150,7 @@ export default function DashboardScreen() {
       const recent = sessions.filter((s: PracticeSession) => s.type === type).slice(0, 5);
       if (recent.length === 0) continue;
       const isProx = type === 'Chipping' || type === 'Pitching';
-      const allDrills = recent.flatMap((s: PracticeSession) =>
+      const allDrills = recent.flatMap((s: PracticeSession): (Drill | ProximityDrill)[] =>
         isProx ? (s.proximityDrills ?? []) : s.drills
       ).filter(d => d.success > 0);
       if (allDrills.length === 0) continue;

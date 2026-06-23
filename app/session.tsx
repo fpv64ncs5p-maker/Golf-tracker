@@ -159,7 +159,8 @@ export default function SessionScreen() {
         setAdaptiveLevel(calcAdaptiveLevel(sessions, sessionType));
       });
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
 
   const formatTime = () => {
     const mins = Math.floor(seconds / 60);
@@ -179,12 +180,12 @@ export default function SessionScreen() {
   const addGridDrill = () => {
     if (!drillName) {
       const msg = 'Please enter a drill name.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('Missing name', msg);
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('Missing name', msg);
       return;
     }
     if (gridTotal === 0) {
       const msg = 'Tap the grid to count at least one shot.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('No shots counted', msg);
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('No shots counted', msg);
       return;
     }
     const success = gridSuccessPct;
@@ -207,7 +208,7 @@ export default function SessionScreen() {
   const addLegacyDrill = () => {
     if (!drillName || !made || !attempts) {
       const msg = 'Fill in drill name, made, and total before adding.';
-      Platform.OS === 'web' ? alert(msg) : Alert.alert('Missing fields', msg);
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('Missing fields', msg);
       return;
     }
     const success = Math.round((parseInt(made) / parseInt(attempts)) * 100);
@@ -442,7 +443,7 @@ export default function SessionScreen() {
             {gridTotal > 0 && (
               <View style={styles.previewRow}>
                 <Text style={styles.proxPreview}>
-                  {gridTotal} shots · {gridSuccessPct}% {sessionType === 'Putting' ? 'holed' : `≤${threshold}m`}
+                  {gridTotal} shots · {gridSuccessPct}% {sessionType === 'Putting' ? 'holed' : `≤${actualThreshold}m`}
                   {dominantMiss(grid) ? `  ·  miss: ${dominantMiss(grid)}` : ''}
                 </Text>
                 <TouchableOpacity onPress={() => setGrid(emptyGrid())} style={styles.resetBtn}>

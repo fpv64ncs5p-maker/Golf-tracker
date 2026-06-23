@@ -61,7 +61,7 @@ export default function RoundSetupScreen() {
       setSky(mapWeatherCode(data.weather?.[0]?.id ?? 800));
       setWeatherTemp(Math.round(data.main?.temp ?? 0));
       setWeatherFetched(true);
-    } catch (e) {
+    } catch {
       // silently fall back to manual
     } finally {
       setWeatherLoading(false);
