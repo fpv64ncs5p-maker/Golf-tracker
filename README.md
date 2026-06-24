@@ -49,10 +49,12 @@ Uses the **World Handicap System (WHS)** formula:
 
 ```
 Score Differential = (Gross Score − Course Rating) × 113 / Slope Rating
-Handicap Index = Average of best N differentials × 0.96
+Handicap Index     = Average of best N differentials  (+ thin-record adjustment)
 ```
 
-Rounds on 9-hole courses have their differential doubled to convert to an 18-hole equivalent. The number of best differentials used scales with rounds played (per WHS table, up to 8 of the last 20).
+The number of best differentials used scales with rounds played (per the WHS table — best 1 of 3 up to best 8 of 20), and a downward adjustment is applied for very thin records (−2.0 at 3 rounds, −1.0 at 4 and 6). The result is capped at the WHS maximum of 54.0.
+
+**Known simplifications (vs. official WHS):** uses raw gross score rather than Adjusted Gross Score (no per-hole net-double-bogey cap, which would need each hole's Stroke Index); no Playing Conditions Calculation, soft/hard caps, or exceptional-score reductions; and 9-hole rounds have their differential doubled to a 18-hole equivalent (official WHS blends the recorded 9 with an expected score). This is a personal **training** index — it tracks your trend but will not exactly equal your official NGF/WHS handicap.
 
 Rounds automatically inherit CR & Slope from the course/tee when the rating isn't stored directly on the round (backwards compatible with rounds logged before ratings were added).
 

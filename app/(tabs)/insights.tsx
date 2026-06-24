@@ -19,6 +19,13 @@ const WHS_TABLE: Record<number, number> = {
   19: 7, 20: 8,
 };
 
+// WHS adjustment subtracted from the average for thin scoring records (Rule 5.2a)
+const WHS_ADJUSTMENT: Record<number, number> = {
+  3: -2.0,
+  4: -1.0,
+  6: -1.0,
+};
+
 export default function InsightsScreen() {
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -141,12 +148,17 @@ export default function InsightsScreen() {
 
     const count = recent.length;
     const useBest = WHS_TABLE[Math.min(count, 20)] ?? 8;
+    const adjustment = WHS_ADJUSTMENT[Math.min(count, 20)] ?? 0;
 
-    // Sort and take best (lowest) differentials
+    // Sort and take best (lowest) differentials, then average.
+    // Current WHS: average the best N and apply the thin-record adjustment.
+    // (The old 0.96 "Bonus for Excellence" was removed when WHS launched in 2020.)
     const sorted = [...differentials].sort((a, b) => a - b);
     const best = sorted.slice(0, useBest);
     const avg = best.reduce((a, b) => a + b, 0) / best.length;
-    const handicap = parseFloat((avg * 0.96).toFixed(1));
+    const raw = avg + adjustment;
+    // WHS maximum Handicap Index is 54.0
+    const handicap = parseFloat(Math.min(raw, 54).toFixed(1));
 
     return {
       handicap,
