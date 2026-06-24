@@ -131,34 +131,47 @@ export default function InsightsScreen() {
     // Use only last 20 rounds
     const recent = validRounds.slice(-20);
 
-    // Calculate score differential for each round
-    const differentials = recent.map((r: Round) => {
+    // Index from a set of differentials: average the best N (per WHS table) + thin-record adjustment, capped at 54.
+    // (The old 0.96 "Bonus for Excellence" was removed when WHS launched in 2020.)
+    const indexFromDifferentials = (diffs: number[]): number => {
+      const n = diffs.length;
+      const useBest = WHS_TABLE[Math.min(n, 20)] ?? 8;
+      const adjustment = WHS_ADJUSTMENT[Math.min(n, 20)] ?? 0;
+      const best = [...diffs].sort((a, b) => a - b).slice(0, useBest);
+      const avg = best.reduce((a, b) => a + b, 0) / best.length;
+      return Math.min(avg + adjustment, 54);
+    };
+
+    // Raw differential of the holes actually played (9-hole rounds give a 9-hole differential).
+    const baseDifferential = (r: Round) => {
       const grossScore = r.coursePar + (r.stats?.scoreVsPar ?? 0);
       // Halve the CR only when it's a full-18 rating used for a 9-hole round.
       // Detect by magnitude: 18-hole CRs are ~59–72, true 9-hole CRs are ~23–36.
-      // (coursePar can't tell them apart — a real 9-hole par is ~36, same as half of 72.)
       const isNineOnEighteen = r.holes === 9 && (r.courseRating ?? 0) > 55;
       const effectiveCR = isNineOnEighteen ? (r.courseRating ?? 0) / 2 : (r.courseRating ?? 0);
       const effectiveSlope = r.slopeRating ?? 113; // slope doesn't need halving
-      let diff = (grossScore - effectiveCR) * 113 / effectiveSlope;
-      // Double 9-hole differentials to convert to 18-hole equivalent
-      if (r.holes === 9) diff = diff * 2;
+      return (grossScore - effectiveCR) * 113 / effectiveSlope;
+    };
+
+    // Pass 1: provisional index (9-hole rounds simply doubled) so we have a current index to scale with.
+    const provisionalIndex = indexFromDifferentials(
+      recent.map((r: Round) => (r.holes === 9 ? baseDifferential(r) * 2 : baseDifferential(r)))
+    );
+
+    // Pass 2: scale each 9-hole round to an 18-hole differential using the WHS "expected score" approach.
+    // 18-hole differential = 9-hole differential + expected differential for the unplayed 9.
+    // The official expected-score table isn't published; this approximation (index ÷ 2 + 1.5) matches
+    // USGA's worked example (index 14 → expected half 8.5) and behaves correctly at scratch.
+    const expectedHalf = provisionalIndex / 2 + 1.5;
+    const differentials = recent.map((r: Round) => {
+      const base = baseDifferential(r);
+      const diff = r.holes === 9 ? base + expectedHalf : base;
       return parseFloat(diff.toFixed(1));
     });
 
     const count = recent.length;
+    const handicap = parseFloat(indexFromDifferentials(differentials).toFixed(1));
     const useBest = WHS_TABLE[Math.min(count, 20)] ?? 8;
-    const adjustment = WHS_ADJUSTMENT[Math.min(count, 20)] ?? 0;
-
-    // Sort and take best (lowest) differentials, then average.
-    // Current WHS: average the best N and apply the thin-record adjustment.
-    // (The old 0.96 "Bonus for Excellence" was removed when WHS launched in 2020.)
-    const sorted = [...differentials].sort((a, b) => a - b);
-    const best = sorted.slice(0, useBest);
-    const avg = best.reduce((a, b) => a + b, 0) / best.length;
-    const raw = avg + adjustment;
-    // WHS maximum Handicap Index is 54.0
-    const handicap = parseFloat(Math.min(raw, 54).toFixed(1));
 
     return {
       handicap,
