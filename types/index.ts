@@ -13,6 +13,7 @@ export interface HoleDefinition {
   par: number;
   distance: number | null;
   distanceByTee?: Record<string, number>;
+  strokeIndex?: number | null; // 1–18 (or 1–9) hole difficulty ranking, used for Adjusted Gross Score
 }
 
 export interface Course {

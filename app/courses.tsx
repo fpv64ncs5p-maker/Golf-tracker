@@ -13,7 +13,7 @@ const TEE_COLOURS = [
 ];
 
 const DEFAULT_HOLES = Array.from({ length: 18 }, (_, i) => ({
-  hole: i + 1, par: 4, distance: '',
+  hole: i + 1, par: 4, distance: '', si: '',
 }));
 
 const COUNTRY_FLAG: Record<string, string> = {
@@ -149,13 +149,18 @@ export default function CoursesScreen() {
     const existing = course.holes || [];
     const inputs = Array.from({ length: 18 }, (_, i) => {
       const saved = existing.find(h => h.hole === i + 1);
-      return { hole: i + 1, par: saved?.par ?? 4, distance: saved?.distance?.toString() ?? '' };
+      return {
+        hole: i + 1,
+        par: saved?.par ?? 4,
+        distance: saved?.distance?.toString() ?? '',
+        si: saved?.strokeIndex?.toString() ?? '',
+      };
     });
     setHoleInputs(inputs);
     setEditingHoles(course.id);
   };
 
-  const updateHoleInput = (holeIndex: number, field: 'par' | 'distance', value: string | number) => {
+  const updateHoleInput = (holeIndex: number, field: 'par' | 'distance' | 'si', value: string | number) => {
     setHoleInputs(prev => prev.map((h, i) =>
       i === holeIndex ? { ...h, [field]: value } : h
     ));
@@ -168,6 +173,7 @@ export default function CoursesScreen() {
         hole: h.hole,
         par: h.par,
         distance: h.distance ? parseInt(h.distance) : null,
+        strokeIndex: h.si ? parseInt(h.si) : null,
       }));
       return { ...c, holes };
     });
@@ -357,7 +363,8 @@ export default function CoursesScreen() {
                           <View style={styles.holeHeaderRow}>
                             <Text style={[styles.holeCol, styles.holeColNum, styles.holeHeaderText]}>#</Text>
                             <Text style={[styles.holeColPar, styles.holeHeaderText]}>Par</Text>
-                            <Text style={[styles.holeColDist, styles.holeHeaderText]}>Distance (m)</Text>
+                            <Text style={[styles.holeColDist, styles.holeHeaderText]}>Dist (m)</Text>
+                            <Text style={[styles.holeColSi, styles.holeHeaderText]}>SI</Text>
                           </View>
                           {holeInputs.map((h, i) => (
                             <View key={h.hole} style={[styles.holeInputRow, i % 2 === 0 && styles.holeRowAlt]}>
@@ -384,8 +391,19 @@ export default function CoursesScreen() {
                                   style={styles.distInput}
                                 />
                               </View>
+                              {/* Stroke Index input */}
+                              <View style={styles.holeColSi}>
+                                <TextInput
+                                  value={h.si}
+                                  onChangeText={v => updateHoleInput(i, 'si', v)}
+                                  placeholder="—"
+                                  keyboardType="numeric"
+                                  style={styles.distInput}
+                                />
+                              </View>
                             </View>
                           ))}
+                          <Text style={styles.siHint}>SI = Stroke Index (hole difficulty 1–18, from the scorecard). Optional — improves handicap accuracy.</Text>
                           <View style={[styles.btnRow, { marginTop: 12 }]}>
                             <TouchableOpacity style={styles.saveTeeBtn} onPress={saveHoles}>
                               <Text style={styles.saveTeeBtnText}>✅ Save Holes</Text>
@@ -403,13 +421,15 @@ export default function CoursesScreen() {
                               <View style={styles.holeHeaderRow}>
                                 <Text style={[styles.holeCol, styles.holeColNum, styles.holeHeaderText]}>#</Text>
                                 <Text style={[styles.holeColPar, styles.holeHeaderText]}>Par</Text>
-                                <Text style={[styles.holeColDist, styles.holeHeaderText]}>Distance (m)</Text>
+                                <Text style={[styles.holeColDist, styles.holeHeaderText]}>Dist (m)</Text>
+                                <Text style={[styles.holeColSi, styles.holeHeaderText]}>SI</Text>
                               </View>
                               {course.holes.map((h, i) => (
                                 <View key={h.hole} style={[styles.holeInputRow, i % 2 === 0 && styles.holeRowAlt]}>
                                   <Text style={[styles.holeCol, styles.holeColNum, styles.holeNumText]}>{h.hole}</Text>
                                   <Text style={[styles.holeColPar, styles.holeReadText]}>Par {h.par}</Text>
                                   <Text style={[styles.holeColDist, styles.holeReadText]}>{h.distance ? `${h.distance}m` : '—'}</Text>
+                                  <Text style={[styles.holeColSi, styles.holeReadText]}>{h.strokeIndex ?? '—'}</Text>
                                 </View>
                               ))}
                               <TouchableOpacity style={[styles.saveTeeBtn, { marginTop: 12 }]} onPress={() => startEditHoles(course)}>
@@ -570,9 +590,11 @@ const styles = StyleSheet.create({
   holeInputRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 2 },
   holeRowAlt: { backgroundColor: '#fafafa' },
   holeCol: { justifyContent: 'center' },
-  holeColNum: { width: 28 },
-  holeColPar: { flex: 1, paddingRight: 8 },
-  holeColDist: { flex: 1 },
+  holeColNum: { width: 22 },
+  holeColPar: { flex: 1.2, paddingRight: 8 },
+  holeColDist: { flex: 1, paddingRight: 8 },
+  holeColSi: { width: 50 },
+  siHint: { fontSize: 11, color: '#999', marginTop: 8, fontStyle: 'italic', lineHeight: 15 },
   holeNumText: { fontSize: 13, fontWeight: 'bold', color: '#555' },
   holeReadText: { fontSize: 13, color: '#444' },
   parQuickRow: { flexDirection: 'row', gap: 4 },

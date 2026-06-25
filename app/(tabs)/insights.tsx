@@ -142,29 +142,76 @@ export default function InsightsScreen() {
       return Math.min(avg + adjustment, 54);
     };
 
-    // Raw differential of the holes actually played (9-hole rounds give a 9-hole differential).
-    const baseDifferential = (r: Round) => {
-      const grossScore = r.coursePar + (r.stats?.scoreVsPar ?? 0);
-      // Halve the CR only when it's a full-18 rating used for a 9-hole round.
-      // Detect by magnitude: 18-hole CRs are ~59–72, true 9-hole CRs are ~23–36.
+    // Effective CR/Slope for the holes actually played.
+    // Halve the CR only when it's a full-18 rating used for a 9-hole round.
+    // Detect by magnitude: 18-hole CRs are ~59–72, true 9-hole CRs are ~23–36.
+    const effective = (r: Round) => {
       const isNineOnEighteen = r.holes === 9 && (r.courseRating ?? 0) > 55;
       const effectiveCR = isNineOnEighteen ? (r.courseRating ?? 0) / 2 : (r.courseRating ?? 0);
       const effectiveSlope = r.slopeRating ?? 113; // slope doesn't need halving
-      return (grossScore - effectiveCR) * 113 / effectiveSlope;
+      return { effectiveCR, effectiveSlope };
     };
 
-    // Pass 1: provisional index (9-hole rounds simply doubled) so we have a current index to scale with.
+    // Adjusted Gross Score (WHS net double bogey cap), only when every played hole has a Stroke Index.
+    // Caps each hole at par + 2 + strokes received, so one blow-up hole can't distort the index.
+    // Returns null when Stroke Index data is missing → caller falls back to the raw gross score.
+    const adjustedGross = (r: Round, provIndex: number): number | null => {
+      const holeData = r.holeData || [];
+      if (holeData.length === 0) return null;
+      const siMap: Record<number, number> = {};
+      // Prefer the round's own snapshot; fall back to the current course definition so that
+      // filling in a course's Stroke Index also applies Adjusted Gross Score to past rounds.
+      (r.courseHoles || []).forEach(h => { if (h.strokeIndex) siMap[h.hole] = h.strokeIndex; });
+      if (!holeData.every(h => siMap[h.hole])) {
+        const course = courses.find((c: Course) => {
+          if (r.courseId && c.id === r.courseId) return true;
+          const rName = r.courseName?.trim().toLowerCase() ?? '';
+          const cName = c.name?.trim().toLowerCase() ?? '';
+          return rName === cName || rName.includes(cName) || cName.includes(rName);
+        });
+        (course?.holes || []).forEach(h => { if (h.strokeIndex) siMap[h.hole] = h.strokeIndex; });
+      }
+      if (!holeData.every(h => siMap[h.hole])) return null;
+
+      const { effectiveCR, effectiveSlope } = effective(r);
+      // Course Handicap for the holes played (index halved for a 9-hole round).
+      const chIndex = r.holes === 9 ? provIndex / 2 : provIndex;
+      const courseHandicap = Math.round(chIndex * (effectiveSlope / 113) + (effectiveCR - r.coursePar));
+      const holesPlayed = holeData.length;
+      // Allocate strokes: every hole gets floor(CH/holes); the (CH mod holes) hardest holes get +1.
+      const base = Math.floor(courseHandicap / holesPlayed);
+      const extra = courseHandicap - base * holesPlayed;
+      const ranked = holeData.map(h => ({ h, si: siMap[h.hole] })).sort((a, b) => a.si - b.si);
+      let ags = 0;
+      ranked.forEach((item, idx) => {
+        const received = Math.max(0, base + (idx < extra ? 1 : 0)); // clamp ≥0 (plus handicaps don't remove strokes here)
+        const netDoubleBogey = item.h.par + 2 + received;
+        ags += Math.min(item.h.totalStrokes, netDoubleBogey);
+      });
+      return ags;
+    };
+
+    // Raw differential of the holes actually played (9-hole rounds give a 9-hole differential).
+    // Uses Adjusted Gross Score when Stroke Index is available, otherwise the stored gross score.
+    const baseDifferential = (r: Round, provIndex?: number) => {
+      const { effectiveCR, effectiveSlope } = effective(r);
+      const ags = provIndex != null ? adjustedGross(r, provIndex) : null;
+      const gross = ags != null ? ags : r.coursePar + (r.stats?.scoreVsPar ?? 0);
+      return (gross - effectiveCR) * 113 / effectiveSlope;
+    };
+
+    // Pass 1: provisional index (raw gross, 9-hole rounds doubled) → gives a current index to scale/cap with.
     const provisionalIndex = indexFromDifferentials(
       recent.map((r: Round) => (r.holes === 9 ? baseDifferential(r) * 2 : baseDifferential(r)))
     );
 
-    // Pass 2: scale each 9-hole round to an 18-hole differential using the WHS "expected score" approach.
-    // 18-hole differential = 9-hole differential + expected differential for the unplayed 9.
+    // Pass 2: apply Adjusted Gross Score, and scale each 9-hole round to an 18-hole differential
+    // via the WHS "expected score" approach: 18-hole diff = 9-hole diff + expected differential for the unplayed 9.
     // The official expected-score table isn't published; this approximation (index ÷ 2 + 1.5) matches
     // USGA's worked example (index 14 → expected half 8.5) and behaves correctly at scratch.
     const expectedHalf = provisionalIndex / 2 + 1.5;
     const differentials = recent.map((r: Round) => {
-      const base = baseDifferential(r);
+      const base = baseDifferential(r, provisionalIndex);
       const diff = r.holes === 9 ? base + expectedHalf : base;
       return parseFloat(diff.toFixed(1));
     });

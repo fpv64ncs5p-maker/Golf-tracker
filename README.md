@@ -56,7 +56,9 @@ The number of best differentials used scales with rounds played (per the WHS tab
 
 **9-hole rounds** are scaled to an 18-hole Score Differential the WHS 2024 way: `18-hole differential = 9-hole differential + expected differential for the unplayed 9`. The official expected-score table is proprietary (USGA/R&A don't publish it), so an approximation is used — `expected half = index ÷ 2 + 1.5` — which matches USGA's published worked example (index 14 → expected half 8.5) and is accurate in the mid-handicap range. The index is computed in two passes: a provisional index (9-holers doubled) provides the "current index" used to scale, then the final index is computed from the scaled differentials.
 
-**Known simplifications (vs. official WHS):** uses raw gross score rather than Adjusted Gross Score (no per-hole net-double-bogey cap, which would need each hole's Stroke Index); no Playing Conditions Calculation, soft/hard caps, or exceptional-score reductions; and the 9-hole expected-score factor is an approximation of the proprietary table. This is a personal **training** index — it tracks your trend but will not exactly equal your official NGF/WHS handicap.
+**Adjusted Gross Score:** when a course has per-hole **Stroke Index** filled in (Manage Courses → Holes → SI), the handicap uses WHS Adjusted Gross Score — each hole is capped at net double bogey (par + 2 + strokes received, allocated from the round's Course Handicap by Stroke Index). Rounds without Stroke Index fall back to raw gross.
+
+**Known simplifications (vs. official WHS):** no Playing Conditions Calculation, soft/hard caps, or exceptional-score reductions; the 9-hole expected-score factor approximates the proprietary table; and the Course Handicap used for the net-double-bogey allocation is derived from the app's own (provisional) index. This is a personal **training** index — it tracks your trend but will not exactly equal your official NGF/WHS handicap.
 
 Rounds automatically inherit CR & Slope from the course/tee when the rating isn't stored directly on the round (backwards compatible with rounds logged before ratings were added).
 

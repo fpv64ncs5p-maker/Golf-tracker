@@ -1,25 +1,8 @@
-// Course data types and constants
-export interface TeeData {
-  par: number;
-  rating: number | null;
-  slope: number | null;
-}
-
-export interface Hole {
-  hole: number;
-  par: number;
-  distance: number;
-  distanceByTee?: Record<string, number>;
-}
-
-export interface Course {
-  id: string;
-  country: string;
-  club?: string;
-  name: string;
-  tees: Record<string, TeeData>;
-  holes: Hole[];
-}
+// Course data types — re-exported from the canonical definitions in ../types
+// (previously redefined here and had drifted, e.g. TeeData.par was non-nullable)
+import type { Course, HoleDefinition, TeeData } from '../types';
+export type { Course, TeeData };
+export type Hole = HoleDefinition;
 
 export const GENDERSTEYN_GELE_LUS: Course = {
   id: 'gendersteyn-gele-lus',
