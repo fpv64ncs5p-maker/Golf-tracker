@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets } from '../types';
 
 // ── Drill suggestions ─────────────────────────────────────────────────────────
 
@@ -78,6 +78,32 @@ const dominantMiss = (g: DirectionGrid): string | null => {
   return g[top.key] > 0 ? top.label : null;
 };
 
+// ── Proximity bucket helpers (Chipping) ────────────────────────────────────────
+// Buckets track where each chip finished relative to the pin (and mishits).
+
+const BUCKET_DEFS: { key: keyof ProximityBuckets; label: string }[] = [
+  { key: 'inside1m', label: '≤ 1m' },
+  { key: 'one2m', label: '1–2m' },
+  { key: 'two3m', label: '2–3m' },
+  { key: 'beyond3m', label: 'Out (>3m)' },
+  { key: 'miss', label: 'Mishit / duff' },
+];
+
+const emptyBuckets = (): ProximityBuckets => ({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
+
+const sumBuckets = (b: ProximityBuckets) => b.inside1m + b.one2m + b.two3m + b.beyond3m + b.miss;
+
+// Success = % of shots that finished within the day's target distance (from the adaptive level).
+const successFromBuckets = (b: ProximityBuckets, thresholdMeters: number) => {
+  const total = sumBuckets(b);
+  if (total === 0) return 0;
+  let within: number;
+  if (thresholdMeters <= 1) within = b.inside1m;
+  else if (thresholdMeters <= 2) within = b.inside1m + b.one2m;
+  else within = b.inside1m + b.one2m + b.two3m;
+  return Math.round((within / total) * 100);
+};
+
 // Returns adaptive level 1/2/3 based on recent session success.
 // Chipping: level 1=≤3m, 2=≤2m, 3=≤1m (pin-based)
 // Pitching: level 1=10%, 2=7.5%, 3=5% of drill distance
@@ -125,7 +151,9 @@ export default function SessionScreen() {
   const { type } = useLocalSearchParams();
   const sessionType = typeof type === 'string' ? type : '';
   const proximity = sessionType === 'Chipping' || sessionType === 'Pitching';
-  const useGrid = sessionType === 'Putting' || proximity;
+  // Chipping uses proximity buckets (≤1m/≤2m/≤3m/out/mishit); Putting & Pitching use the direction grid.
+  const useBuckets = sessionType === 'Chipping';
+  const useGrid = (sessionType === 'Putting' || proximity) && !useBuckets;
 
   const [seconds, setSeconds] = useState(0);
   const [notes, setNotes] = useState('');
@@ -134,9 +162,15 @@ export default function SessionScreen() {
   // Unified drill name
   const [drillName, setDrillName] = useState('');
 
-  // Grid state (Putting / Chipping / Pitching)
+  // Grid state (Putting / Pitching)
   const [grid, setGrid] = useState<DirectionGrid>(emptyGrid());
   const [proxClub, setProxClub] = useState<string | null>(null);
+
+  // Proximity bucket state (Chipping)
+  const [buckets, setBuckets] = useState<ProximityBuckets>(emptyBuckets());
+  const bucketTotal = sumBuckets(buckets);
+  const adjustBucket = (key: keyof ProximityBuckets, delta: number) =>
+    setBuckets(prev => ({ ...prev, [key]: Math.max(0, prev[key] + delta) }));
 
   // Legacy state (Long Game / Short Game)
   const [made, setMade] = useState('');
@@ -172,6 +206,7 @@ export default function SessionScreen() {
   const centerLabel = sessionType === 'Putting' ? 'Holed' : `≤${actualThreshold}m ✓`;
   const gridTotal = sumGrid(grid);
   const gridSuccessPct = successFromGrid(grid);
+  const bucketSuccessPct = successFromBuckets(buckets, actualThreshold);
 
   const tapCell = (key: GridKey) => setGrid(prev => ({ ...prev, [key]: prev[key] + 1 }));
 
@@ -200,6 +235,29 @@ export default function SessionScreen() {
     }
     setDrillName('');
     setGrid(emptyGrid());
+    setProxClub(null);
+  };
+
+  // ── Add proximity bucket drill (Chipping) ──────────────────────────────────
+
+  const addBucketDrill = () => {
+    if (!drillName) {
+      const msg = 'Please enter a drill name.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('Missing name', msg);
+      return;
+    }
+    if (bucketTotal === 0) {
+      const msg = 'Count at least one shot before adding.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('No shots counted', msg);
+      return;
+    }
+    setProxDrills(prev => [...prev, {
+      name: drillName, attempts: bucketTotal, buckets: { ...buckets },
+      threshold: actualThreshold, thresholdLevel: adaptiveLevel, success: bucketSuccessPct,
+      club: proxClub ?? undefined,
+    }]);
+    setDrillName('');
+    setBuckets(emptyBuckets());
     setProxClub(null);
   };
 
@@ -238,7 +296,16 @@ export default function SessionScreen() {
       let finalDrills = [...drills];
       let finalProxDrills = [...proxDrills];
 
-      // Auto-add any pending grid drill
+      // Auto-add any pending bucket drill (Chipping)
+      if (useBuckets && drillName && bucketTotal > 0) {
+        finalProxDrills = [...finalProxDrills, {
+          name: drillName, attempts: bucketTotal, buckets: { ...buckets },
+          threshold: actualThreshold, thresholdLevel: adaptiveLevel, success: bucketSuccessPct,
+          club: proxClub ?? undefined,
+        }];
+      }
+
+      // Auto-add any pending grid drill (Putting / Pitching)
       if (useGrid && drillName && gridTotal > 0) {
         const success = gridSuccessPct;
         if (proximity) {
@@ -355,7 +422,76 @@ export default function SessionScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {useGrid ? (
+        {useBuckets ? (
+          <>
+            {/* Suggestion chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chipsContainer}>
+              {gridSuggestions.map(name => (
+                <TouchableOpacity
+                  key={name}
+                  style={[styles.chip, drillName === name && styles.chipSelected]}
+                  onPress={() => { setDrillName(name); setBuckets(emptyBuckets()); }}
+                >
+                  <Text style={[styles.chipText, drillName === name && styles.chipTextSelected]}>{name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TextInput
+              placeholder="Drill name (e.g. Chip 10m)"
+              value={drillName}
+              onChangeText={setDrillName}
+              style={[styles.input, { marginBottom: 8 }]}
+            />
+
+            {/* Club selector */}
+            <Text style={styles.clubSelectorLabel}>Club (optional)</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={[styles.chipsContainer, { marginBottom: 8 }]}>
+              {SHORT_GAME_CLUBS.map(club => (
+                <TouchableOpacity
+                  key={club}
+                  style={[styles.chip, proxClub === club && styles.chipSelected]}
+                  onPress={() => setProxClub(proxClub === club ? null : club)}
+                >
+                  <Text style={[styles.chipText, proxClub === club && styles.chipTextSelected]}>{club}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Adaptive target badge */}
+            <Text style={styles.thresholdBadge}>🎯 Target today: ≤{getActualThreshold('', 'Chipping', adaptiveLevel)}m</Text>
+
+            {/* Proximity bucket counters */}
+            <View style={styles.bucketList}>
+              {BUCKET_DEFS.map(b => (
+                <View key={b.key} style={styles.bucketRow}>
+                  <Text style={styles.bucketLabel}>{b.label}</Text>
+                  <View style={styles.bucketControls}>
+                    <TouchableOpacity style={styles.bucketBtn} onPress={() => adjustBucket(b.key, -1)}>
+                      <Text style={styles.bucketBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.bucketCount}>{buckets[b.key]}</Text>
+                    <TouchableOpacity style={styles.bucketBtn} onPress={() => adjustBucket(b.key, 1)}>
+                      <Text style={styles.bucketBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {/* Live summary */}
+            {bucketTotal > 0 && (
+              <View style={styles.previewRow}>
+                <Text style={styles.proxPreview}>
+                  {bucketTotal} shots · {bucketSuccessPct}% ≤{actualThreshold}m · {Math.round((buckets.inside1m / bucketTotal) * 100)}% ≤1m
+                </Text>
+                <TouchableOpacity onPress={() => setBuckets(emptyBuckets())} style={styles.resetBtn}>
+                  <Text style={styles.resetBtnText}>↺ Reset</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        ) : useGrid ? (
           <>
             {/* Suggestion chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chipsContainer}>
@@ -395,10 +531,7 @@ export default function SessionScreen() {
               </>
             )}
 
-            {/* Adaptive threshold badge */}
-            {sessionType === 'Chipping' && (
-              <Text style={styles.thresholdBadge}>🎯 Target today: ≤{getActualThreshold('', 'Chipping', adaptiveLevel)}m</Text>
-            )}
+            {/* Adaptive threshold badge (Pitching) */}
             {sessionType === 'Pitching' && drillName && (
               <Text style={styles.thresholdBadge}>🎯 Target: ≤{actualThreshold}m for this drill</Text>
             )}
@@ -494,7 +627,7 @@ export default function SessionScreen() {
           </>
         )}
 
-        <TouchableOpacity style={styles.addButton} onPress={useGrid ? addGridDrill : addLegacyDrill}>
+        <TouchableOpacity style={styles.addButton} onPress={useBuckets ? addBucketDrill : useGrid ? addGridDrill : addLegacyDrill}>
           <Text style={styles.addText}>+ Add Drill</Text>
         </TouchableOpacity>
 
@@ -607,6 +740,14 @@ const styles = StyleSheet.create({
   proxPreview: { fontSize: 13, color: '#4CAF50', fontWeight: '600', flex: 1 },
   resetBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#f0f0f0', borderRadius: 8 },
   resetBtnText: { fontSize: 13, color: '#666', fontWeight: '600' },
+  // Proximity bucket counters
+  bucketList: { marginBottom: 10 },
+  bucketRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  bucketLabel: { fontSize: 15, color: '#333', fontWeight: '600' },
+  bucketControls: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  bucketBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center' },
+  bucketBtnText: { fontSize: 22, color: '#333' },
+  bucketCount: { fontSize: 20, fontWeight: 'bold', width: 32, textAlign: 'center' },
 
   notesInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 10, fontSize: 14, backgroundColor: '#fafafa', marginBottom: 10, minHeight: 44 },
   addButton: { backgroundColor: '#4CAF50', padding: 14, borderRadius: 10, marginBottom: 10 },

@@ -6,7 +6,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { getSessions, saveSessions } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets } from '../types';
 
 const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
@@ -72,7 +72,29 @@ const dominantMiss = (g: DirectionGrid): string | null => {
 };
 
 const isProximityType = (type: string) => type === 'Chipping' || type === 'Pitching';
-const isGridType = (type: string) => type === 'Putting' || isProximityType(type);
+// Chipping logs proximity buckets; Putting & Pitching use the direction grid.
+const isBucketType = (type: string) => type === 'Chipping';
+const isGridType = (type: string) => (type === 'Putting' || isProximityType(type)) && !isBucketType(type);
+
+// ── Proximity bucket helpers (Chipping) ────────────────────────────────────────
+const BUCKET_DEFS: { key: keyof ProximityBuckets; label: string }[] = [
+  { key: 'inside1m', label: '≤ 1m' },
+  { key: 'one2m', label: '1–2m' },
+  { key: 'two3m', label: '2–3m' },
+  { key: 'beyond3m', label: 'Out (>3m)' },
+  { key: 'miss', label: 'Mishit / duff' },
+];
+const emptyBuckets = (): ProximityBuckets => ({ inside1m: 0, one2m: 0, two3m: 0, beyond3m: 0, miss: 0 });
+const sumBuckets = (b: ProximityBuckets) => b.inside1m + b.one2m + b.two3m + b.beyond3m + b.miss;
+const successFromBuckets = (b: ProximityBuckets, thresholdMeters: number) => {
+  const total = sumBuckets(b);
+  if (total === 0) return 0;
+  let within: number;
+  if (thresholdMeters <= 1) within = b.inside1m;
+  else if (thresholdMeters <= 2) within = b.inside1m + b.one2m;
+  else within = b.inside1m + b.one2m + b.two3m;
+  return Math.round((within / total) * 100);
+};
 
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60);
@@ -139,6 +161,34 @@ function GridDisplay({
   );
 }
 
+// ── Proximity bucket editor (edit + add mode) ─────────────────────────────────
+
+function BucketEditor({ values, onChange }: { values: ProximityBuckets; onChange: (key: keyof ProximityBuckets, delta: number) => void }) {
+  return (
+    <View style={{ marginBottom: 8 }}>
+      {BUCKET_DEFS.map(b => (
+        <View key={b.key} style={bucketStyles.row}>
+          <Text style={bucketStyles.label}>{b.label}</Text>
+          <View style={bucketStyles.controls}>
+            <TouchableOpacity style={bucketStyles.btn} onPress={() => onChange(b.key, -1)}><Text style={bucketStyles.btnText}>−</Text></TouchableOpacity>
+            <Text style={bucketStyles.count}>{values[b.key]}</Text>
+            <TouchableOpacity style={bucketStyles.btn} onPress={() => onChange(b.key, 1)}><Text style={bucketStyles.btnText}>+</Text></TouchableOpacity>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const bucketStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  label: { fontSize: 15, color: '#333', fontWeight: '600' },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  btn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center' },
+  btnText: { fontSize: 20, color: '#333' },
+  count: { fontSize: 18, fontWeight: 'bold', width: 30, textAlign: 'center' },
+});
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function SessionDetailScreen() {
@@ -162,6 +212,7 @@ export default function SessionDetailScreen() {
   const [addingDrill, setAddingDrill] = useState(false);
   const [newDrillName, setNewDrillName] = useState('');
   const [newGrid, setNewGrid] = useState<DirectionGrid>(emptyGrid());
+  const [newBuckets, setNewBuckets] = useState<ProximityBuckets>(emptyBuckets());
   const [newProxClub, setNewProxClub] = useState<string | null>(null);
   // Legacy add form (Long Game)
   const [newMade, setNewMade] = useState('');
@@ -171,6 +222,7 @@ export default function SessionDetailScreen() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editGrid, setEditGrid] = useState<DirectionGrid>(emptyGrid());
+  const [editBuckets, setEditBuckets] = useState<ProximityBuckets>(emptyBuckets());
   const [editClub, setEditClub] = useState<string | null>(null);
   // Legacy edit
   const [editMade, setEditMade] = useState('');
@@ -194,7 +246,10 @@ export default function SessionDetailScreen() {
 
   const proximity = session ? isProximityType(session.type) : false;
   const useGrid = session ? isGridType(session.type) : false;
+  const useBuckets = session ? isBucketType(session.type) : false;
   const defaultThreshold = 2;
+  // A proximity drill is bucket-based if it stored buckets, or it has no grid in a Chipping session.
+  const drillIsBucket = (d?: ProximityDrill | null) => !!d && !d.grid && (!!d.buckets || useBuckets);
 
   const getCenterLabel = (threshold?: number, type?: string) => {
     if (type === 'Putting') return 'Holed';
@@ -239,7 +294,15 @@ export default function SessionDetailScreen() {
 
   const confirmAddDrill = () => {
     if (!newDrillName) return;
-    if (useGrid) {
+    if (useBuckets) {
+      const total = sumBuckets(newBuckets);
+      if (total === 0) return;
+      setProxDrills(prev => [...prev, {
+        name: newDrillName, attempts: total, buckets: { ...newBuckets },
+        threshold: defaultThreshold, success: successFromBuckets(newBuckets, defaultThreshold),
+        club: newProxClub ?? undefined,
+      }]);
+    } else if (useGrid) {
       const total = sumGrid(newGrid);
       if (total === 0) return;
       const success = successFromGrid(newGrid);
@@ -256,7 +319,7 @@ export default function SessionDetailScreen() {
       const success = Math.round((parseInt(newMade) / parseInt(newAttempts)) * 100);
       setDrills(prev => [...prev, { name: newDrillName, made: newMade, attempts: newAttempts, success }]);
     }
-    setNewDrillName(''); setNewGrid(emptyGrid()); setNewProxClub(null); setNewMade(''); setNewAttempts('');
+    setNewDrillName(''); setNewGrid(emptyGrid()); setNewBuckets(emptyBuckets()); setNewProxClub(null); setNewMade(''); setNewAttempts('');
     setAddingDrill(false);
     setDirty(true);
   };
@@ -269,6 +332,7 @@ export default function SessionDetailScreen() {
       setEditingIndex(i);
       setEditName(d.name);
       setEditGrid(d.grid ? { ...d.grid } : emptyGrid());
+      setEditBuckets(d.buckets ? { ...d.buckets } : emptyBuckets());
       setEditClub(d.club ?? null);
     } else {
       const d = drills[i];
@@ -287,14 +351,26 @@ export default function SessionDetailScreen() {
   const confirmEdit = () => {
     if (editingIndex === null || !editName) return;
     if (proximity) {
-      const total = sumGrid(editGrid);
-      if (total === 0) return;
-      setProxDrills(prev => prev.map((d, i) =>
-        i === editingIndex ? {
-          ...d, name: editName, attempts: total,
-          grid: { ...editGrid }, success: successFromGrid(editGrid), club: editClub ?? undefined,
-        } : d
-      ));
+      const editingBucket = drillIsBucket(proxDrills[editingIndex]);
+      if (editingBucket) {
+        const total = sumBuckets(editBuckets);
+        if (total === 0) return;
+        setProxDrills(prev => prev.map((d, i) =>
+          i === editingIndex ? {
+            ...d, name: editName, attempts: total, grid: undefined, buckets: { ...editBuckets },
+            success: successFromBuckets(editBuckets, d.threshold ?? defaultThreshold), club: editClub ?? undefined,
+          } : d
+        ));
+      } else {
+        const total = sumGrid(editGrid);
+        if (total === 0) return;
+        setProxDrills(prev => prev.map((d, i) =>
+          i === editingIndex ? {
+            ...d, name: editName, attempts: total,
+            grid: { ...editGrid }, success: successFromGrid(editGrid), club: editClub ?? undefined,
+          } : d
+        ));
+      }
     } else {
       const d = drills[editingIndex];
       if (d.grid || sumGrid(editGrid) > 0) {
@@ -340,6 +416,7 @@ export default function SessionDetailScreen() {
     const proxDrill = isProx ? (d as ProximityDrill) : null;
     const stdDrill = !isProx ? (d as Drill) : null;
     const hasGrid = isProx ? !!proxDrill?.grid : !!stdDrill?.grid;
+    const isBucketDrill = drillIsBucket(proxDrill);
     const centerLabel = getCenterLabel(proxDrill?.threshold, session.type);
 
     if (isEditing) {
@@ -380,7 +457,21 @@ export default function SessionDetailScreen() {
           )}
 
           {/* Grid or legacy input */}
-          {(useGrid || hasGrid) ? (
+          {isBucketDrill ? (
+            <>
+              <BucketEditor values={editBuckets} onChange={(key, delta) => setEditBuckets(prev => ({ ...prev, [key]: Math.max(0, prev[key] + delta) }))} />
+              {sumBuckets(editBuckets) > 0 && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.proxPreview}>
+                    {sumBuckets(editBuckets)} shots · {successFromBuckets(editBuckets, proxDrill?.threshold ?? defaultThreshold)}% ≤{proxDrill?.threshold ?? defaultThreshold}m
+                  </Text>
+                  <TouchableOpacity onPress={() => setEditBuckets(emptyBuckets())} style={styles.resetBtn}>
+                    <Text style={styles.resetBtnText}>↺ Reset</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (useGrid || hasGrid) ? (
             <>
               <GridDisplay
                 grid={editGrid}
@@ -433,10 +524,10 @@ export default function SessionDetailScreen() {
                   <GridDisplay grid={proxDrill!.grid} centerLabel={getCenterLabel(proxDrill!.threshold, session.type)} />
                 </>
               ) : (
-                // Legacy bucket display
+                // Proximity bucket display
                 <Text style={styles.drillScore}>
-                  {proxDrill!.attempts} shots · {proxDrill!.success}% ·{' '}
-                  ≤1m:{proxDrill!.buckets?.inside1m ?? 0}  1–2m:{proxDrill!.buckets?.one2m ?? 0}  2–3m:{proxDrill!.buckets?.two3m ?? 0}  3m+:{proxDrill!.buckets?.beyond3m ?? 0}
+                  {proxDrill!.attempts} shots · {proxDrill!.success}% ≤{proxDrill!.threshold ?? defaultThreshold}m ·{' '}
+                  ≤1m:{proxDrill!.buckets?.inside1m ?? 0}  1–2m:{proxDrill!.buckets?.one2m ?? 0}  2–3m:{proxDrill!.buckets?.two3m ?? 0}  out:{proxDrill!.buckets?.beyond3m ?? 0}  mishit:{proxDrill!.buckets?.miss ?? 0}
                 </Text>
               )}
             </>
@@ -562,7 +653,21 @@ export default function SessionDetailScreen() {
                 </>
               )}
 
-              {useGrid ? (
+              {useBuckets ? (
+                <>
+                  <BucketEditor values={newBuckets} onChange={(key, delta) => setNewBuckets(prev => ({ ...prev, [key]: Math.max(0, prev[key] + delta) }))} />
+                  {sumBuckets(newBuckets) > 0 && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={styles.proxPreview}>
+                        {sumBuckets(newBuckets)} shots · {successFromBuckets(newBuckets, defaultThreshold)}% ≤{defaultThreshold}m
+                      </Text>
+                      <TouchableOpacity onPress={() => setNewBuckets(emptyBuckets())} style={styles.resetBtn}>
+                        <Text style={styles.resetBtnText}>↺ Reset</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              ) : useGrid ? (
                 <>
                   <GridDisplay
                     grid={newGrid}

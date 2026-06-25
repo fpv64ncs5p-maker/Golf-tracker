@@ -1,6 +1,7 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-06-25** — Chipping logging reworked to **proximity buckets**: per drill, count ≤1m / ≤2m / ≤3m / Out (>3m) / Mishit (+ drill name + club). Success = % within the day's adaptive target; feeds dashboard + Insights. Putting & Pitching keep the direction grid. Old grid-based chipping drills still display/edit as grids (backward compatible). Reason: the direction grid couldn't capture proximity, so detail was being lost in free-text notes.
 - **2026-06-23** — Code health pass:
   - Fixed crash bug in `session.tsx` (undefined `threshold` → `actualThreshold` in the live grid summary).
   - Fixed `(tabs)/dashboard.tsx` `flatMap` union typing.
