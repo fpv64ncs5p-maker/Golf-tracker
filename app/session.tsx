@@ -168,6 +168,7 @@ export default function SessionScreen() {
 
   // Proximity bucket state (Chipping)
   const [buckets, setBuckets] = useState<ProximityBuckets>(emptyBuckets());
+  const [overrideThreshold, setOverrideThreshold] = useState<number | null>(null); // null = use adaptive target
   const bucketTotal = sumBuckets(buckets);
   const adjustBucket = (key: keyof ProximityBuckets, delta: number) =>
     setBuckets(prev => ({ ...prev, [key]: Math.max(0, prev[key] + delta) }));
@@ -203,10 +204,13 @@ export default function SessionScreen() {
   };
 
   const actualThreshold = proximity ? getActualThreshold(drillName, sessionType, adaptiveLevel) : 0;
+  // Effective chipping target = manual override if set, else the adaptive target.
+  const effectiveThreshold = overrideThreshold ?? actualThreshold;
+  const thresholdToLevel = (m: number) => (m <= 1 ? 3 : m <= 2 ? 2 : 1);
   const centerLabel = sessionType === 'Putting' ? 'Holed' : `≤${actualThreshold}m ✓`;
   const gridTotal = sumGrid(grid);
   const gridSuccessPct = successFromGrid(grid);
-  const bucketSuccessPct = successFromBuckets(buckets, actualThreshold);
+  const bucketSuccessPct = successFromBuckets(buckets, effectiveThreshold);
 
   const tapCell = (key: GridKey) => setGrid(prev => ({ ...prev, [key]: prev[key] + 1 }));
 
@@ -253,7 +257,7 @@ export default function SessionScreen() {
     }
     setProxDrills(prev => [...prev, {
       name: drillName, attempts: bucketTotal, buckets: { ...buckets },
-      threshold: actualThreshold, thresholdLevel: adaptiveLevel, success: bucketSuccessPct,
+      threshold: effectiveThreshold, thresholdLevel: thresholdToLevel(effectiveThreshold), success: bucketSuccessPct,
       club: proxClub ?? undefined,
     }]);
     setDrillName('');
@@ -300,7 +304,7 @@ export default function SessionScreen() {
       if (useBuckets && drillName && bucketTotal > 0) {
         finalProxDrills = [...finalProxDrills, {
           name: drillName, attempts: bucketTotal, buckets: { ...buckets },
-          threshold: actualThreshold, thresholdLevel: adaptiveLevel, success: bucketSuccessPct,
+          threshold: effectiveThreshold, thresholdLevel: thresholdToLevel(effectiveThreshold), success: bucketSuccessPct,
           club: proxClub ?? undefined,
         }];
       }
@@ -458,8 +462,24 @@ export default function SessionScreen() {
               ))}
             </ScrollView>
 
-            {/* Adaptive target badge */}
-            <Text style={styles.thresholdBadge}>🎯 Target today: ≤{getActualThreshold('', 'Chipping', adaptiveLevel)}m</Text>
+            {/* Target distance — adaptive by default, tap to override */}
+            <Text style={styles.clubSelectorLabel}>
+              Target {overrideThreshold == null ? `(auto · ≤${actualThreshold}m)` : '(manual)'}
+            </Text>
+            <View style={styles.targetRow}>
+              {[1, 2, 3].map(m => {
+                const active = effectiveThreshold === m;
+                return (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.targetBtn, active && styles.targetBtnActive]}
+                    onPress={() => setOverrideThreshold(overrideThreshold === m ? null : m)}
+                  >
+                    <Text style={[styles.targetBtnText, active && styles.targetBtnTextActive]}>≤{m}m</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             {/* Proximity bucket counters */}
             <View style={styles.bucketList}>
@@ -483,7 +503,7 @@ export default function SessionScreen() {
             {bucketTotal > 0 && (
               <View style={styles.previewRow}>
                 <Text style={styles.proxPreview}>
-                  {bucketTotal} shots · {bucketSuccessPct}% ≤{actualThreshold}m · {Math.round((buckets.inside1m / bucketTotal) * 100)}% ≤1m
+                  {bucketTotal} shots · {bucketSuccessPct}% ≤{effectiveThreshold}m · {Math.round((buckets.inside1m / bucketTotal) * 100)}% ≤1m
                 </Text>
                 <TouchableOpacity onPress={() => setBuckets(emptyBuckets())} style={styles.resetBtn}>
                   <Text style={styles.resetBtnText}>↺ Reset</Text>
@@ -740,6 +760,12 @@ const styles = StyleSheet.create({
   proxPreview: { fontSize: 13, color: '#4CAF50', fontWeight: '600', flex: 1 },
   resetBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#f0f0f0', borderRadius: 8 },
   resetBtnText: { fontSize: 13, color: '#666', fontWeight: '600' },
+  // Chipping target toggle
+  targetRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  targetBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center', backgroundColor: '#fff' },
+  targetBtnActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  targetBtnText: { fontSize: 15, fontWeight: '700', color: '#555' },
+  targetBtnTextActive: { color: '#fff' },
   // Proximity bucket counters
   bucketList: { marginBottom: 10 },
   bucketRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
