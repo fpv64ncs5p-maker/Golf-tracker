@@ -1,11 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, Alert,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert, Modal,
 } from 'react-native';
 import { router } from 'expo-router';
-import { getCourses, getRangeDrills, saveRangeDrills } from '../services/storage';
-import type { Course, RangeDrill, RangeDrillHole, RangeDrillShot } from '../types';
+import {
+  getCourses, getRangeDrills, saveRangeDrills,
+  getDraftRangeDrill, saveDraftRangeDrill, clearDraftRangeDrill,
+} from '../services/storage';
+import type {
+  Course, HoleDefinition, RangeDrill, RangeDrillHole, RangeDrillShot, DraftRangeDrill,
+} from '../types';
+import { PUTTS_PER_HOLE } from '../constants/scoring';
 
 // ── Club list ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +41,12 @@ export default function RangeDrillScreen() {
   // ── Selecting ──────────────────────────────────────────────────────────────
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  // Holes actually being played this drill (a course subset: full 18, front 9, or back 9)
+  const [selectedHoles, setSelectedHoles] = useState<HoleDefinition[]>([]);
+  // Course awaiting a length choice (only courses with > 9 holes)
+  const [pendingCourse, setPendingCourse] = useState<Course | null>(null);
+  // An autosaved, unfinished drill that can be resumed
+  const [draft, setDraft] = useState<DraftRangeDrill | null>(null);
 
   // ── Active ─────────────────────────────────────────────────────────────────
   const [holeIndex, setHoleIndex] = useState(0);
@@ -45,6 +57,7 @@ export default function RangeDrillScreen() {
 
   // ── Complete ───────────────────────────────────────────────────────────────
   const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // ── Timer ──────────────────────────────────────────────────────────────────
   const [seconds, setSeconds] = useState(0);
@@ -52,7 +65,26 @@ export default function RangeDrillScreen() {
 
   useEffect(() => {
     getCourses().then(setCourses);
+    getDraftRangeDrill().then(setDraft);
   }, []);
+
+  // Autosave the in-progress drill after each shot/hole so it survives interruptions.
+  // `seconds` is intentionally excluded from deps to avoid writing every tick — it's
+  // captured at each save point, which is close enough to resume from.
+  useEffect(() => {
+    if (phase !== 'active' || !selectedCourse) return;
+    saveDraftRangeDrill({
+      course: selectedCourse,
+      holesToPlay: selectedHoles,
+      holeIndex,
+      completedHoles,
+      currentShots,
+      seconds,
+      notes,
+      startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, selectedCourse, selectedHoles, holeIndex, completedHoles, currentShots]);
 
   // Start timer when drill becomes active
   useEffect(() => {
@@ -66,19 +98,59 @@ export default function RangeDrillScreen() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const holeDefinitions = selectedCourse?.holes ?? [];
+  const holeDefinitions = selectedHoles;
   const currentHoleDef = holeDefinitions[holeIndex];
   const totalHoles = holeDefinitions.length;
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  const startDrill = (course: Course) => {
+  // A course tapped in the list: go straight in for ≤9-hole courses,
+  // otherwise ask Full 18 / Front 9 / Back 9 first.
+  const pickCourse = (course: Course) => {
     if (!course.holes || course.holes.length === 0) {
       const msg = 'This course has no hole data. Add holes in Manage Courses first.';
       if (Platform.OS === 'web') alert(msg); else Alert.alert('No hole data', msg);
       return;
     }
+    if (course.holes.length > 9) {
+      setPendingCourse(course);
+    } else {
+      startDrill(course, [...course.holes].sort((a, b) => a.hole - b.hole));
+    }
+  };
+
+  const resumeDraft = () => {
+    if (!draft) return;
+    setSelectedCourse(draft.course);
+    setSelectedHoles(draft.holesToPlay);
+    setHoleIndex(draft.holeIndex);
+    setCompletedHoles(draft.completedHoles);
+    setCurrentShots(draft.currentShots);
+    setSeconds(draft.seconds);
+    setNotes(draft.notes);
+    setSelectedClub(null);
+    setDistanceInput('');
+    setDraft(null);
+    setPhase('active');
+  };
+
+  const discardDraft = () => {
+    const msg = 'Discard your unfinished drill? This can\'t be undone.';
+    const doDiscard = () => { clearDraftRangeDrill(); setDraft(null); };
+    if (Platform.OS === 'web') {
+      if (window.confirm(msg)) doDiscard();
+    } else {
+      Alert.alert('Discard unfinished drill?', msg, [
+        { text: 'Keep', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: doDiscard },
+      ]);
+    }
+  };
+
+  const startDrill = (course: Course, holes: HoleDefinition[]) => {
+    setPendingCourse(null);
     setSelectedCourse(course);
+    setSelectedHoles(holes);
     setHoleIndex(0);
     setCompletedHoles([]);
     setCurrentShots([]);
@@ -88,13 +160,34 @@ export default function RangeDrillScreen() {
     setPhase('active');
   };
 
+  // Length options derived from the course awaiting a choice
+  const startFull = () => {
+    if (!pendingCourse) return;
+    startDrill(pendingCourse, [...pendingCourse.holes].sort((a, b) => a.hole - b.hole));
+  };
+  const startFront9 = () => {
+    if (!pendingCourse) return;
+    const sorted = [...pendingCourse.holes].sort((a, b) => a.hole - b.hole);
+    startDrill(pendingCourse, sorted.slice(0, 9));
+  };
+  const startBack9 = () => {
+    if (!pendingCourse) return;
+    const sorted = [...pendingCourse.holes].sort((a, b) => a.hole - b.hole);
+    startDrill(pendingCourse, sorted.slice(-9));
+  };
+
   const addShot = () => {
     if (!selectedClub) {
       const msg = 'Select a club before adding a shot.';
       if (Platform.OS === 'web') alert(msg); else Alert.alert('No club selected', msg);
       return;
     }
-    const dist = distanceInput ? parseInt(distanceInput) : null;
+    const dist = parseInt(distanceInput);
+    if (!distanceInput.trim() || isNaN(dist) || dist <= 0) {
+      const msg = 'Enter the shot distance in metres so the remaining distance to the green stays accurate.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('Distance required', msg);
+      return;
+    }
     setCurrentShots(prev => [...prev, { club: selectedClub, distance: dist }]);
     setDistanceInput('');
     // Keep club selected for convenience (next shot usually same club)
@@ -129,8 +222,44 @@ export default function RangeDrillScreen() {
     }
   };
 
+  // Finish the drill early (e.g. after 9 holes of an 18-hole course).
+  // Saves the holes played so far instead of forcing all holes to be completed.
+  const goToComplete = (holes: RangeDrillHole[]) => {
+    setCompletedHoles(holes);
+    setCurrentShots([]);
+    setSelectedClub(null);
+    setDistanceInput('');
+    setPhase('complete');
+  };
+
+  const finishDrill = () => {
+    // Mid-hole shots logged but not yet marked "On the Green" → ask whether to keep them.
+    if (currentShots.length > 0 && currentHoleDef) {
+      const inProgressHole: RangeDrillHole = {
+        hole: currentHoleDef.hole,
+        par: currentHoleDef.par,
+        courseDistance: currentHoleDef.distance ?? null,
+        shots: [...currentShots],
+      };
+      const withCurrent = [...completedHoles, inProgressHole];
+      const n = currentShots.length;
+      const msg = `You have ${n} shot${n !== 1 ? 's' : ''} logged on hole ${currentHoleDef.hole} that isn't marked "On the Green" yet. Include this hole in the saved drill?`;
+      if (Platform.OS === 'web') {
+        goToComplete(window.confirm(msg) ? withCurrent : completedHoles);
+      } else {
+        Alert.alert('Unfinished hole', msg, [
+          { text: 'Drop it', style: 'destructive', onPress: () => goToComplete(completedHoles) },
+          { text: `Include hole ${currentHoleDef.hole}`, onPress: () => goToComplete(withCurrent) },
+        ]);
+      }
+      return;
+    }
+    goToComplete(completedHoles);
+  };
+
   const saveDrill = async () => {
-    if (!selectedCourse) return;
+    if (!selectedCourse || saving) return;
+    setSaving(true);
     try {
       const drill: RangeDrill = {
         id: Date.now().toString(),
@@ -143,27 +272,34 @@ export default function RangeDrillScreen() {
       };
       const existing = await getRangeDrills();
       await saveRangeDrills([...existing, drill]);
+      await clearDraftRangeDrill();
       router.back();
     } catch (e) {
       console.error('Error saving range drill', e);
+      const msg = 'Could not save your drill. Check your connection and try again — your scorecard is still here.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('Save failed', msg);
+      setSaving(false);
     }
   };
 
   const confirmDiscard = () => {
     const msg = 'Discard this drill? Your progress will be lost.';
+    const doDiscard = () => { clearDraftRangeDrill(); router.back(); };
     if (Platform.OS === 'web') {
-      if (window.confirm(msg)) router.back();
+      if (window.confirm(msg)) doDiscard();
     } else {
       Alert.alert('Discard drill?', msg, [
         { text: 'Keep Going', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+        { text: 'Discard', style: 'destructive', onPress: doDiscard },
       ]);
     }
   };
 
   // ── Score summary helpers ──────────────────────────────────────────────────
 
-  const totalStrokes = completedHoles.reduce((s, h) => s + h.shots.length, 0);
+  const shotsToGreen = completedHoles.reduce((s, h) => s + h.shots.length, 0);
+  const totalPutts = completedHoles.length * PUTTS_PER_HOLE;
+  const totalStrokes = shotsToGreen + totalPutts; // estimated full-hole score (shots + putts)
   const totalPar = completedHoles.reduce((s, h) => s + h.par, 0);
   const totalVsPar = totalStrokes - totalPar;
 
@@ -179,13 +315,31 @@ export default function RangeDrillScreen() {
     }
     const countries = Object.keys(grouped).sort();
 
+    const pendingHoleCount = pendingCourse?.holes?.length ?? 0;
+
     return (
+      <>
       <ScrollView style={styles.container}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>🏌️ Range Drill</Text>
         <Text style={styles.subtitle}>Pick a course to simulate</Text>
+
+        {/* Resume banner — an unfinished drill was autosaved */}
+        {draft && (
+          <View style={styles.resumeBanner}>
+            <TouchableOpacity style={styles.resumeMain} onPress={resumeDraft}>
+              <Text style={styles.resumeTitle}>▶ Resume drill</Text>
+              <Text style={styles.resumeSub}>
+                {draft.course.name} · {draft.completedHoles.length}/{draft.holesToPlay.length} holes done
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.resumeDiscard} onPress={discardDraft}>
+              <Text style={styles.resumeDiscardText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {courses.length === 0 ? (
           <View style={styles.emptyState}>
@@ -207,7 +361,7 @@ export default function RangeDrillScreen() {
                   <TouchableOpacity
                     key={course.id}
                     style={[styles.courseRow, !hasHoles && styles.courseRowDisabled]}
-                    onPress={() => startDrill(course)}
+                    onPress={() => pickCourse(course)}
                     disabled={!hasHoles}
                   >
                     <View style={{ flex: 1 }}>
@@ -226,6 +380,40 @@ export default function RangeDrillScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* Length picker — Full 18 / Front 9 / Back 9 */}
+      <Modal
+        visible={!!pendingCourse}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingCourse(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setPendingCourse(null)}
+        >
+          <TouchableOpacity style={styles.modalSheet} activeOpacity={1}>
+            <Text style={styles.modalTitle}>{pendingCourse?.name}</Text>
+            <Text style={styles.modalSubtitle}>How many holes?</Text>
+
+            <TouchableOpacity style={styles.lengthBtn} onPress={startFull}>
+              <Text style={styles.lengthBtnText}>Full round · {pendingHoleCount} holes</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.lengthBtn} onPress={startFront9}>
+              <Text style={styles.lengthBtnText}>Front 9 · holes 1–9</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.lengthBtn} onPress={startBack9}>
+              <Text style={styles.lengthBtnText}>Back 9 · last 9 holes</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.lengthCancel} onPress={() => setPendingCourse(null)}>
+              <Text style={styles.lengthCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+      </>
     );
   }
 
@@ -233,6 +421,13 @@ export default function RangeDrillScreen() {
   if (phase === 'active' && currentHoleDef) {
     const holeStrokes = currentShots.length;
     const completedCount = completedHoles.length;
+
+    // Running distance to the green: hole length minus the distances hit so far.
+    const holeLength = currentHoleDef.distance ?? null;
+    const distanceCovered = currentShots.reduce((sum, s) => sum + (s.distance ?? 0), 0);
+    const remaining = holeLength != null ? holeLength - distanceCovered : null;
+    const remainingLabel =
+      remaining == null ? null : remaining > 0 ? `${remaining}m to the green` : '⛳ On / near the green';
 
     return (
       <KeyboardAvoidingView
@@ -263,6 +458,11 @@ export default function RangeDrillScreen() {
           {currentHoleDef.distance && (
             <View style={styles.holeCardRight}>
               <Text style={styles.holeDistance}>📏 {currentHoleDef.distance}m</Text>
+              {remainingLabel && (
+                <Text style={[styles.holeRemaining, remaining != null && remaining <= 0 && styles.holeRemainingGreen]}>
+                  {remainingLabel}
+                </Text>
+              )}
             </View>
           )}
         </View>
@@ -287,6 +487,15 @@ export default function RangeDrillScreen() {
 
         {/* ── Input panel ── */}
         <View style={styles.inputPanel}>
+          {/* Live distance to the green */}
+          {remainingLabel && (
+            <View style={[styles.remainingBar, remaining != null && remaining <= 0 && styles.remainingBarGreen]}>
+              <Text style={[styles.remainingBarText, remaining != null && remaining <= 0 && styles.remainingBarTextGreen]}>
+                {remaining != null && remaining > 0 ? '🎯 ' : ''}{remainingLabel}
+              </Text>
+            </View>
+          )}
+
           {/* Club chips */}
           <ScrollView
             horizontal
@@ -334,6 +543,15 @@ export default function RangeDrillScreen() {
               ✅ On the Green{holeStrokes > 0 ? ` · ${holeStrokes} stroke${holeStrokes !== 1 ? 's' : ''}` : ''}
             </Text>
           </TouchableOpacity>
+
+          {/* Finish drill early — save the holes played so far */}
+          {completedCount > 0 && (
+            <TouchableOpacity style={styles.finishBtn} onPress={finishDrill}>
+              <Text style={styles.finishBtnText}>
+                🏁 Finish Drill · {completedCount} of {totalHoles} holes
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
     );
@@ -373,6 +591,9 @@ export default function RangeDrillScreen() {
           </View>
         </View>
       </View>
+      <Text style={styles.scoreCaption}>
+        Score = {shotsToGreen} shots to green + {totalPutts} putts ({PUTTS_PER_HOLE}/hole)
+      </Text>
 
       {/* Hole-by-hole scorecard */}
       <Text style={styles.scorecardTitle}>Scorecard</Text>
@@ -384,13 +605,14 @@ export default function RangeDrillScreen() {
         <Text style={[styles.scColClubs, styles.scHeaderText]}>Clubs</Text>
       </View>
       {completedHoles.map((h, i) => {
-        const vp = h.shots.length - h.par;
+        const holeScore = h.shots.length + PUTTS_PER_HOLE;
+        const vp = holeScore - h.par;
         const clubSummary = h.shots.map(s => s.club).join(', ');
         return (
           <View key={i} style={[styles.scorecardRow, i % 2 === 0 && styles.scorecardRowAlt]}>
             <Text style={[styles.scCol, styles.scColHole, styles.scHoleNum]}>{h.hole}</Text>
             <Text style={[styles.scCol, styles.scColPar, styles.scText]}>{h.par}</Text>
-            <Text style={[styles.scCol, styles.scColStrokes, styles.scText]}>{h.shots.length}</Text>
+            <Text style={[styles.scCol, styles.scColStrokes, styles.scText]}>{holeScore}</Text>
             <Text style={[
               styles.scCol, styles.scColVsPar,
               vp < 0 && styles.underPar,
@@ -416,8 +638,12 @@ export default function RangeDrillScreen() {
         blurOnSubmit
       />
 
-      <TouchableOpacity style={styles.saveBtn} onPress={saveDrill}>
-        <Text style={styles.saveBtnText}>💾 Save Drill</Text>
+      <TouchableOpacity
+        style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+        onPress={saveDrill}
+        disabled={saving}
+      >
+        <Text style={styles.saveBtnText}>{saving ? 'Saving…' : '💾 Save Drill'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.discardFinalBtn} onPress={confirmDiscard}>
@@ -475,8 +701,10 @@ const styles = StyleSheet.create({
   holeCardLeft: {},
   holeNumber: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
   holePar: { fontSize: 14, color: '#bbdefb', marginTop: 2 },
-  holeCardRight: {},
+  holeCardRight: { alignItems: 'flex-end' },
   holeDistance: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+  holeRemaining: { fontSize: 13, fontWeight: '600', color: '#bbdefb', marginTop: 2 },
+  holeRemainingGreen: { color: '#a5d6a7' },
 
   shotsScroll: { flex: 1, paddingHorizontal: 16 },
   shotsContent: { paddingVertical: 8 },
@@ -495,6 +723,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: '#eee',
     padding: 14, backgroundColor: '#fff',
   },
+  remainingBar: {
+    backgroundColor: '#e3f2fd', borderRadius: 10,
+    paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10, alignItems: 'center',
+  },
+  remainingBarGreen: { backgroundColor: '#e8f5e9' },
+  remainingBarText: { fontSize: 15, fontWeight: 'bold', color: '#1565C0' },
+  remainingBarTextGreen: { color: '#2e7d32' },
   clubScroll: { marginBottom: 10 },
   clubScrollContent: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
   clubChip: {
@@ -524,6 +759,45 @@ const styles = StyleSheet.create({
   onGreenBtnDisabled: { backgroundColor: '#ccc' },
   onGreenBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 
+  finishBtn: {
+    marginTop: 10, paddingVertical: 12,
+    borderRadius: 14, alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#2e7d32', backgroundColor: 'transparent',
+  },
+  finishBtnText: { color: '#2e7d32', fontWeight: 'bold', fontSize: 15 },
+
+  // Resume banner
+  resumeBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff3e0', borderRadius: 14,
+    borderWidth: 1.5, borderColor: '#ffb74d',
+    padding: 14, marginBottom: 16,
+  },
+  resumeMain: { flex: 1 },
+  resumeTitle: { fontSize: 16, fontWeight: 'bold', color: '#e65100' },
+  resumeSub: { fontSize: 13, color: '#bf6b15', marginTop: 2 },
+  resumeDiscard: { paddingHorizontal: 10, paddingVertical: 6 },
+  resumeDiscardText: { fontSize: 18, color: '#bf6b15', fontWeight: 'bold' },
+
+  // Length picker modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalSheet: {
+    width: '100%', maxWidth: 380, backgroundColor: '#fff',
+    borderRadius: 18, padding: 20,
+  },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#222', textAlign: 'center' },
+  modalSubtitle: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 2, marginBottom: 16 },
+  lengthBtn: {
+    backgroundColor: '#1565C0', paddingVertical: 14,
+    borderRadius: 12, alignItems: 'center', marginBottom: 10,
+  },
+  lengthBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  lengthCancel: { paddingVertical: 12, alignItems: 'center' },
+  lengthCancelText: { color: '#888', fontWeight: '600', fontSize: 15 },
+
   // Complete phase
   summaryCard: {
     backgroundColor: '#f0f7ff', borderRadius: 16,
@@ -536,6 +810,7 @@ const styles = StyleSheet.create({
   underPar: { color: '#2e7d32' },
   evenPar: { color: '#888' },
   overPar: { color: '#e53935' },
+  scoreCaption: { fontSize: 12, color: '#999', textAlign: 'center', marginBottom: 20 },
 
   scorecardTitle: {
     fontSize: 13, fontWeight: '700', color: '#888',
@@ -565,6 +840,7 @@ const styles = StyleSheet.create({
     minHeight: 60, marginVertical: 16,
   },
   saveBtn: { backgroundColor: '#4CAF50', padding: 16, borderRadius: 14, alignItems: 'center' },
+  saveBtnDisabled: { backgroundColor: '#a5d6a7' },
   saveBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 17 },
   discardFinalBtn: { alignItems: 'center', marginTop: 14, padding: 10 },
   discardFinalText: { color: '#bbb', fontSize: 14 },

@@ -2,14 +2,16 @@ import { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Pressable, Platform, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { getSessions, saveSessions, getRounds, saveRounds } from '../../services/storage';
-import type { PracticeSession, Round, Drill, ProximityDrill } from '../../types';
+import { getSessions, saveSessions, getRounds, saveRounds, getRangeDrills, saveRangeDrills } from '../../services/storage';
+import type { PracticeSession, Round, Drill, ProximityDrill, RangeDrill } from '../../types';
+import { PUTTS_PER_HOLE } from '../../constants/scoring';
 import { router } from 'expo-router';
 
 export default function DashboardScreen() {
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [rounds, setRounds] = useState<Round[]>([]);
-  const [activeTab, setActiveTab] = useState<'practice' | 'rounds'>('practice');
+  const [rangeDrills, setRangeDrills] = useState<RangeDrill[]>([]);
+  const [activeTab, setActiveTab] = useState<'practice' | 'rounds' | 'drills'>('practice');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   // Date picker state
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -20,8 +22,10 @@ export default function DashboardScreen() {
     try {
       const sessionData = await getSessions();
       const roundData = await getRounds();
+      const drillData = await getRangeDrills();
       setSessions(sessionData.reverse());
       setRounds(roundData.reverse());
+      setRangeDrills(drillData.reverse());
     } catch (e) {
       console.log('Error loading data', e);
     }
@@ -77,6 +81,18 @@ export default function DashboardScreen() {
       const originalIndex = all.length - 1 - index;
       all.splice(originalIndex, 1);
       await saveRounds(all);
+      loadData();
+      setExpandedCard(null);
+    });
+  };
+
+  // ── Delete range drill ──────────────────────────────────────
+  const deleteRangeDrill = (index: number) => {
+    confirmAction('Delete Drill', 'Are you sure you want to delete this range drill?', async () => {
+      const all = await getRangeDrills();
+      const originalIndex = all.length - 1 - index;
+      all.splice(originalIndex, 1);
+      await saveRangeDrills(all);
       loadData();
       setExpandedCard(null);
     });
@@ -211,6 +227,10 @@ export default function DashboardScreen() {
           <Text style={styles.summaryNum}>{rs.total}</Text>
           <Text style={styles.summaryLabel}>Rounds</Text>
         </View>
+        <View style={styles.summaryBox}>
+          <Text style={styles.summaryNum}>{rangeDrills.length}</Text>
+          <Text style={styles.summaryLabel}>Drills</Text>
+        </View>
       </View>
 
       {/* Tabs */}
@@ -226,6 +246,12 @@ export default function DashboardScreen() {
           onPress={() => setActiveTab('rounds')}
         >
           <Text style={[styles.tabText, activeTab === 'rounds' && styles.tabTextActive]}>🏌️ Rounds</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'drills' && styles.tabActive]}
+          onPress={() => setActiveTab('drills')}
+        >
+          <Text style={[styles.tabText, activeTab === 'drills' && styles.tabTextActive]}>🎯 Drills</Text>
         </TouchableOpacity>
       </View>
 
@@ -405,6 +431,61 @@ export default function DashboardScreen() {
                           <Text style={styles.editHolesBtnText}>✏️ Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteRound(i)}>
+                          <Text style={styles.deleteBtnText}>🗑 Delete</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
+        </ScrollView>
+      )}
+
+      {/* Drills tab */}
+      {activeTab === 'drills' && (
+        <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+          {rangeDrills.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>🎯</Text>
+              <Text style={styles.emptyTitle}>No range drills yet</Text>
+              <Text style={styles.emptySubtitle}>Simulate a course on the range to track your shots hole by hole.</Text>
+              <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/range-drill')}>
+                <Text style={styles.emptyBtnText}>Start a Range Drill</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            rangeDrills.map((item: RangeDrill, i: number) => {
+              const key = `drill-${i}`;
+              const isExpanded = expandedCard === key;
+              const strokes = item.holes.reduce((s, h) => s + h.shots.length, 0) + item.holes.length * PUTTS_PER_HOLE;
+              const par = item.holes.reduce((s, h) => s + h.par, 0);
+              const vsPar = strokes - par;
+              return (
+                <Pressable key={key} onPress={() => toggleCard(key)}>
+                  <View style={[styles.card, isExpanded && styles.cardExpanded]}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.cardType}>{item.courseName ?? 'Range Drill'}</Text>
+                      <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+                    </View>
+                    <Text style={styles.cardDetail}>
+                      {item.holes.length} holes  ·  est {strokes}  ·  {scoreLabel(vsPar)}  ·  ⏱ {formatTime(item.duration)}
+                    </Text>
+                    {item.notes ? (
+                      <Text style={styles.cardNotes}>📝 {item.notes}</Text>
+                    ) : null}
+
+                    {/* Expanded actions */}
+                    {isExpanded && (
+                      <View style={styles.actions}>
+                        <TouchableOpacity style={styles.detailBtn} onPress={() => router.push({ pathname: '/range-drill-detail' as any, params: { index: i } })}>
+                          <Text style={styles.detailBtnText}>📋 View</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.editHolesBtn} onPress={() => router.push({ pathname: '/range-drill-detail' as any, params: { index: i, autoEdit: '1' } })}>
+                          <Text style={styles.editHolesBtnText}>✏️ Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteRangeDrill(i)}>
                           <Text style={styles.deleteBtnText}>🗑 Delete</Text>
                         </TouchableOpacity>
                       </View>

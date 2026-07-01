@@ -1,21 +1,42 @@
 import { useState, useCallback } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, ScrollView } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, Platform, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { initializeAppData } from '../../services/seed';
-import { getDraftRound } from '../../services/storage';
-import type { DraftRound } from '../../types';
+import { getDraftRound, getDraftSession, clearDraftSession } from '../../services/storage';
+import type { DraftRound, DraftSession } from '../../types';
 
 export default function StartScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const [draftRound, setDraftRound] = useState<DraftRound | null>(null);
+  const [draftSession, setDraftSession] = useState<DraftSession | null>(null);
 
   useFocusEffect(useCallback(() => {
     initializeAppData();
     getDraftRound().then(setDraftRound);
+    getDraftSession().then(setDraftSession);
   }, []));
 
   const types = ["Putting", "Chipping", "Pitching", "Long Game", "Range Drill"];
+
+  const resumeSession = () => {
+    if (!draftSession) return;
+    router.push({ pathname: '/session', params: { type: draftSession.type, resume: '1' } });
+  };
+
+  const discardSession = () => {
+    const doDiscard = () => { clearDraftSession(); setDraftSession(null); };
+    if (Platform.OS === 'web') {
+      if (window.confirm('Discard the unfinished session?')) doDiscard();
+    } else {
+      Alert.alert('Discard session?', 'Discard the unfinished session?', [
+        { text: 'Keep', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: doDiscard },
+      ]);
+    }
+  };
+
+  const drillCount = (draftSession?.drills?.length ?? 0) + (draftSession?.proximityDrills?.length ?? 0);
 
   const resumeRound = () => {
     if (!draftRound) return;
@@ -57,6 +78,21 @@ export default function StartScreen() {
       >
         <Text style={styles.startText}>Start Session</Text>
       </TouchableOpacity>
+
+      {/* Resume session banner — only shown when an unfinished session exists */}
+      {draftSession && (
+        <View style={styles.resumeSessionRow}>
+          <TouchableOpacity style={styles.resumeSessionMain} onPress={resumeSession}>
+            <Text style={styles.resumeSessionTitle}>▶ Resume {draftSession.type} session</Text>
+            <Text style={styles.resumeSessionSub}>
+              {drillCount} drill{drillCount !== 1 ? 's' : ''} logged
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.resumeSessionDiscard} onPress={discardSession}>
+            <Text style={styles.resumeSessionDiscardText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Resume round banner — only shown when a draft exists */}
       {draftRound && (
@@ -112,6 +148,16 @@ const styles = StyleSheet.create({
   },
   resumeTitle: { color: '#fff', fontSize: 17, fontWeight: 'bold', textAlign: 'center' },
   resumeSub: { color: '#bbdefb', fontSize: 13, textAlign: 'center', marginTop: 4 },
+  resumeSessionRow: {
+    marginTop: 16, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff3e0', borderRadius: 14, borderWidth: 1.5, borderColor: '#ffb74d',
+    paddingVertical: 14, paddingHorizontal: 18,
+  },
+  resumeSessionMain: { flex: 1 },
+  resumeSessionTitle: { color: '#e65100', fontSize: 16, fontWeight: 'bold' },
+  resumeSessionSub: { color: '#bf6b15', fontSize: 13, marginTop: 2 },
+  resumeSessionDiscard: { paddingHorizontal: 10, paddingVertical: 6 },
+  resumeSessionDiscardText: { color: '#bf6b15', fontSize: 18, fontWeight: 'bold' },
   roundButton: { marginTop: 16, padding: 18, backgroundColor: '#4CAF50', borderRadius: 14 },
   roundText: { color: '#fff', textAlign: 'center', fontSize: 18, fontWeight: 'bold' },
   linkButton: { marginTop: 14, padding: 14, borderWidth: 1, borderColor: '#ddd', borderRadius: 14 },

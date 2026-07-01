@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { getSessions, saveSessions } from '../services/storage';
+import { getSessions, saveSessions, getDraftSession, saveDraftSession, clearDraftSession } from '../services/storage';
 import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets } from '../types';
 
 // ── Drill suggestions ─────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ const getActualThreshold = (drillName: string, type: string, level: number): num
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SessionScreen() {
-  const { type } = useLocalSearchParams();
+  const { type, resume } = useLocalSearchParams();
   const sessionType = typeof type === 'string' ? type : '';
   const proximity = sessionType === 'Chipping' || sessionType === 'Pitching';
   // Chipping uses proximity buckets (≤1m/≤2m/≤3m/out/mishit); Putting & Pitching use the direction grid.
@@ -186,6 +186,34 @@ export default function SessionScreen() {
     const interval = setInterval(() => setSeconds(s => s + 1), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Resume an autosaved session (launched from the Home resume banner)
+  useEffect(() => {
+    if (resume !== '1') return;
+    getDraftSession().then(draft => {
+      if (!draft) return;
+      setSeconds(draft.seconds);
+      setNotes(draft.notes);
+      setDrills(draft.drills ?? []);
+      setProxDrills(draft.proximityDrills ?? []);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
+
+  // Autosave the committed drills + notes so an interrupted session can be resumed.
+  // `seconds` is captured at each save point but excluded from deps (no per-tick writes).
+  useEffect(() => {
+    if (drills.length === 0 && proxDrills.length === 0 && !notes.trim()) return;
+    saveDraftSession({
+      type: sessionType,
+      seconds,
+      notes,
+      drills,
+      proximityDrills: proxDrills,
+      startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drills, proxDrills, notes]);
 
   // Load adaptive level for chipping/pitching
   useEffect(() => {
@@ -283,12 +311,13 @@ export default function SessionScreen() {
   // ── Discard ────────────────────────────────────────────────────────────────
 
   const confirmDiscard = () => {
+    const doDiscard = () => { clearDraftSession(); router.back(); };
     if (Platform.OS === 'web') {
-      if (window.confirm('Discard Session?\nThe timer and any drills you\'ve logged will be lost.')) router.back();
+      if (window.confirm('Discard Session?\nThe timer and any drills you\'ve logged will be lost.')) doDiscard();
     } else {
       Alert.alert('Discard Session?', 'The timer and any drills you\'ve logged will be lost.', [
         { text: 'Keep Going', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+        { text: 'Discard', style: 'destructive', onPress: doDiscard },
       ]);
     }
   };
@@ -340,6 +369,7 @@ export default function SessionScreen() {
       const sessions = await getSessions();
       sessions.push(newSession);
       await saveSessions(sessions);
+      await clearDraftSession();
       router.back();
     } catch (e) {
       console.log('Error saving session', e);

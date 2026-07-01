@@ -188,6 +188,20 @@ export type DraftRound = Round & {
 };
 
 /**
+ * An in-progress practice session, autosaved locally so it can be resumed
+ * after an interruption. Holds the committed drills + timer + notes (not the
+ * half-entered current drill inputs).
+ */
+export interface DraftSession {
+  type: string;
+  seconds: number;
+  notes: string;
+  drills: Drill[];
+  proximityDrills: ProximityDrill[];
+  startedAt: string;
+}
+
+/**
  * A single shot in a driving range drill
  */
 export interface RangeDrillShot {
@@ -219,6 +233,21 @@ export interface RangeDrill {
 }
 
 /**
+ * An in-progress range drill, autosaved locally so it can be resumed
+ * after an interruption (app close, crash, accidental exit).
+ */
+export interface DraftRangeDrill {
+  course: Course;
+  holesToPlay: HoleDefinition[];   // the chosen subset (full 18, front 9, or back 9)
+  holeIndex: number;
+  completedHoles: RangeDrillHole[];
+  currentShots: RangeDrillShot[];
+  seconds: number;
+  notes: string;
+  startedAt: string;               // ISO timestamp, used for the resume banner
+}
+
+/**
  * Club distance and characteristics from Trackman session
  */
 export interface ClubDistance {
@@ -228,4 +257,8 @@ export interface ClubDistance {
   direction?: string;
   note?: string;
   updatedAt: string;
+  // Real on-course average from saved range drills (kept separate from carry/total).
+  drillAvg?: string;
+  drillCount?: number;       // how many drill shots the average is based on
+  drillUpdatedAt?: string;   // when the drill average was last committed
 }

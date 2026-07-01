@@ -1,9 +1,12 @@
 import { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getClubDistances, saveClubDistances } from '../../services/storage';
-import type { ClubDistance } from '../../types';
+import { getClubDistances, saveClubDistances, getRangeDrills } from '../../services/storage';
+import type { ClubDistance, RangeDrill } from '../../types';
 import { router } from 'expo-router';
+
+const GAP_THRESHOLD = 10;     // flag a club when drill avg differs by ≥ this many metres
+const MIN_DRILL_SHOTS = 3;    // need at least this many drill shots before flagging
 
 const CLUB_LIST = [
   { name: 'Driver', label: 'Driver',    emoji: '🏌️' },
@@ -25,6 +28,7 @@ const CLUB_LIST = [
 
 export default function ClubsScreen() {
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
+  const [drillStats, setDrillStats] = useState<Record<string, { avg: number; count: number; min: number; max: number }>>({});
   const [editingClub, setEditingClub] = useState<string | null>(null);
   const [carry, setCarry] = useState('');
   const [total, setTotal] = useState('');
@@ -34,9 +38,55 @@ export default function ClubsScreen() {
     const load = async () => {
       const data = await getClubDistances();
       setClubDistances(data);
+      const drills = await getRangeDrills();
+      setDrillStats(computeDrillStats(drills));
     };
     load();
   }, []));
+
+  // Aggregate every drill shot's distance by club → average / count / range.
+  const computeDrillStats = (drills: RangeDrill[]) => {
+    const byClub: Record<string, number[]> = {};
+    for (const d of drills) {
+      for (const h of d.holes) {
+        for (const s of h.shots) {
+          if (s.distance != null) (byClub[s.club] ??= []).push(s.distance);
+        }
+      }
+    }
+    const stats: Record<string, { avg: number; count: number; min: number; max: number }> = {};
+    for (const [club, arr] of Object.entries(byClub)) {
+      if (arr.length === 0) continue;
+      const sum = arr.reduce((a, b) => a + b, 0);
+      stats[club] = {
+        avg: Math.round(sum / arr.length),
+        count: arr.length,
+        min: Math.min(...arr),
+        max: Math.max(...arr),
+      };
+    }
+    return stats;
+  };
+
+  // Commit the current drill average into the club's saved profile (its own field —
+  // carry/total are left untouched).
+  const applyDrillAvg = async (clubName: string) => {
+    const ds = drillStats[clubName];
+    if (!ds) return;
+    const now = new Date().toISOString();
+    const base: ClubDistance = clubDistances[clubName] ?? { carry: '', total: '', ballSpeed: '', updatedAt: now };
+    const updated = {
+      ...clubDistances,
+      [clubName]: {
+        ...base,
+        drillAvg: String(ds.avg),
+        drillCount: ds.count,
+        drillUpdatedAt: now,
+      },
+    };
+    setClubDistances(updated);
+    await saveClubDistances(updated);
+  };
 
   const startEditing = (clubName: string) => {
     const existing = clubDistances[clubName];
@@ -51,6 +101,7 @@ export default function ClubsScreen() {
     const updated = {
       ...clubDistances,
       [editingClub]: {
+        ...clubDistances[editingClub], // keep drillAvg, direction, note, etc.
         carry,
         total,
         ballSpeed,
@@ -60,6 +111,24 @@ export default function ClubsScreen() {
     setClubDistances(updated);
     await saveClubDistances(updated);
     setEditingClub(null);
+  };
+
+  // Gap between the real drill average and the measured Trackman Total.
+  // A drill shot logs only the distance the ball ends up at (= total), so Total is
+  // the only apples-to-apples baseline; comparing against carry would just reflect roll.
+  const computeGapFlags = (
+    ds?: { avg: number; count: number },
+    data?: ClubDistance,
+  ): { text: string; shorter: boolean }[] => {
+    if (!ds || ds.count < MIN_DRILL_SHOTS || !data) return [];
+    const total = parseInt(data.total);
+    if (isNaN(total) || total <= 0) return [];
+    const g = ds.avg - total;
+    if (Math.abs(g) < GAP_THRESHOLD) return [];
+    return [{
+      text: `${Math.abs(g)}m ${g < 0 ? 'shorter' : 'longer'} than Total (${ds.avg} vs ${total}m)`,
+      shorter: g < 0,
+    }];
   };
 
   const formatDate = (iso: string) =>
@@ -78,6 +147,8 @@ export default function ClubsScreen() {
 
         {CLUB_LIST.map((club) => {
           const data = clubDistances[club.name];
+          const ds = drillStats[club.name];
+          const gapFlags = computeGapFlags(ds, data);
           const isEditing = editingClub === club.name;
 
           return (
@@ -103,6 +174,22 @@ export default function ClubsScreen() {
                     ) : (
                       <Text style={styles.noData}>Tap to add distances</Text>
                     )}
+                    {data?.drillAvg && (
+                      <Text style={styles.drillSaved}>
+                        🎯 Drill avg: <Text style={styles.drillSavedBold}>{data.drillAvg}m</Text>
+                        {data.drillCount ? `  ·  ${data.drillCount} shots` : ''}
+                      </Text>
+                    )}
+                    {ds && (
+                      <Text style={styles.drillLive}>
+                        📊 From drills: {ds.avg}m avg · {ds.count} shot{ds.count !== 1 ? 's' : ''} ({ds.min}–{ds.max}m)
+                      </Text>
+                    )}
+                    {gapFlags.map((f, idx) => (
+                      <Text key={idx} style={[styles.gapFlag, f.shorter ? styles.gapShorter : styles.gapLonger]}>
+                        {f.shorter ? '⚠️' : '✅'} {f.text}
+                      </Text>
+                    ))}
                     {data?.updatedAt && (
                       <Text style={styles.updatedAt}>Updated {formatDate(data.updatedAt)}</Text>
                     )}
@@ -110,6 +197,14 @@ export default function ClubsScreen() {
                   <Text style={styles.editIcon}>{isEditing ? '▲' : '✏️'}</Text>
                 </View>
               </TouchableOpacity>
+
+              {ds && data?.drillAvg !== String(ds.avg) && (
+                <TouchableOpacity style={styles.applyDrillBtn} onPress={() => applyDrillAvg(club.name)}>
+                  <Text style={styles.applyDrillBtnText}>
+                    {data?.drillAvg ? `↻ Update drill avg to ${ds.avg}m` : `＋ Save ${ds.avg}m as drill avg`}
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               {isEditing && (
                 <View style={styles.editForm}>
@@ -183,6 +278,17 @@ const styles = StyleSheet.create({
   directionRow: { fontSize: 12, color: '#555', marginTop: 3 },
   directionText: { fontWeight: '700', color: '#1565C0' },
   directionNote: { color: '#888', fontStyle: 'italic' },
+  drillSaved: { fontSize: 13, color: '#555', marginTop: 4 },
+  drillSavedBold: { fontWeight: '700', color: '#e65100' },
+  drillLive: { fontSize: 12, color: '#999', marginTop: 2 },
+  gapFlag: { fontSize: 12, fontWeight: '600', marginTop: 3 },
+  gapShorter: { color: '#e65100' },
+  gapLonger: { color: '#2e7d32' },
+  applyDrillBtn: {
+    marginTop: 10, paddingVertical: 9, borderRadius: 9,
+    backgroundColor: '#fff3e0', borderWidth: 1, borderColor: '#ffb74d', alignItems: 'center',
+  },
+  applyDrillBtnText: { color: '#e65100', fontWeight: '700', fontSize: 13 },
   updatedAt: { fontSize: 11, color: '#ccc', marginTop: 2 },
   editIcon: { fontSize: 16, marginLeft: 8 },
 
