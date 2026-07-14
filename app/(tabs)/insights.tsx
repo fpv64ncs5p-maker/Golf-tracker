@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { getSessions, getRounds, getCourses, getClubDistances } from '../../services/storage';
+import { getSessions, getRounds, getCourses, getClubDistances, consumeReadError } from '../../services/storage';
+import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Course, ClubDistance } from '../../types';
 
 // Club order for display (tee to green)
@@ -31,18 +32,21 @@ export default function InsightsScreen() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
+  const [loadError, setLoadError] = useState(false);
+
+  const load = async () => {
+    const sessionData = await getSessions();
+    const roundData = await getRounds();
+    const courseData = await getCourses();
+    const clubData = await getClubDistances();
+    setSessions(sessionData);
+    setRounds(roundData);
+    setCourses(courseData);
+    setClubDistances(clubData);
+    setLoadError(consumeReadError());
+  };
 
   useFocusEffect(useCallback(() => {
-    const load = async () => {
-      const sessionData = await getSessions();
-      const roundData = await getRounds();
-      const courseData = await getCourses();
-      const clubData = await getClubDistances();
-      setSessions(sessionData);
-      setRounds(roundData);
-      setCourses(courseData);
-      setClubDistances(clubData);
-    };
     load();
   }, []));
 
@@ -404,6 +408,8 @@ export default function InsightsScreen() {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>🧠 Your Insights</Text>
+
+      {loadError && <LoadErrorBanner onRetry={load} />}
 
       {/* ── Onboarding empty state ── */}
       {hasNoData && (

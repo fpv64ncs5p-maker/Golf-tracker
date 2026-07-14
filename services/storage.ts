@@ -20,6 +20,20 @@ import type {
 
 // ── Generic Supabase helpers ────────────────────────────────────────────────
 
+// Tracks failed Supabase reads so screens can tell "fetch failed" apart from
+// "no data yet" (e.g. during a Supabase outage the app used to just look empty).
+let readFailures = 0;
+
+/**
+ * Returns true if any Supabase read failed since the last call, then resets.
+ * Call after a screen's load routine to decide whether to show an error banner.
+ */
+export function consumeReadError(): boolean {
+  const failed = readFailures > 0;
+  readFailures = 0;
+  return failed;
+}
+
 async function getFromSupabase<T>(table: string): Promise<T | null> {
   try {
     const { data, error } = await supabase
@@ -27,11 +41,16 @@ async function getFromSupabase<T>(table: string): Promise<T | null> {
       .select('data')
       .eq('id', 'singleton')
       .limit(1);
-    if (error) { console.error(`[Storage] Read error "${table}":`, error); return null; }
+    if (error) {
+      console.error(`[Storage] Read error "${table}":`, error);
+      readFailures++;
+      return null;
+    }
     if (!data || data.length === 0) return null;
     return data[0].data as T;
   } catch (error) {
     console.error(`[Storage] Error reading "${table}":`, error);
+    readFailures++;
     return null;
   }
 }

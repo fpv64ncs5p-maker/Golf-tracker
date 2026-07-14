@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Pressable, Platform, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { getSessions, saveSessions, getRounds, saveRounds, getRangeDrills, saveRangeDrills } from '../../services/storage';
+import { getSessions, saveSessions, getRounds, saveRounds, getRangeDrills, saveRangeDrills, consumeReadError } from '../../services/storage';
+import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Drill, ProximityDrill, RangeDrill } from '../../types';
 import { PUTTS_PER_HOLE } from '../../constants/scoring';
 import { router } from 'expo-router';
@@ -13,6 +14,7 @@ export default function DashboardScreen() {
   const [rangeDrills, setRangeDrills] = useState<RangeDrill[]>([]);
   const [activeTab, setActiveTab] = useState<'practice' | 'rounds' | 'drills'>('practice');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   // Date picker state
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerDate, setPickerDate] = useState(new Date());
@@ -26,8 +28,10 @@ export default function DashboardScreen() {
       setSessions(sessionData.reverse());
       setRounds(roundData.reverse());
       setRangeDrills(drillData.reverse());
+      setLoadError(consumeReadError());
     } catch (e) {
       console.log('Error loading data', e);
+      setLoadError(true);
     }
   };
 
@@ -216,6 +220,8 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>📊 Dashboard</Text>
+
+      {loadError && <LoadErrorBanner onRetry={loadData} />}
 
       {/* Summary bar */}
       <View style={styles.summaryRow}>

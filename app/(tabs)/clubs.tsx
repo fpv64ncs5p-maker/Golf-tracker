@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getClubDistances, saveClubDistances, getRangeDrills } from '../../services/storage';
+import { getClubDistances, saveClubDistances, getRangeDrills, consumeReadError } from '../../services/storage';
+import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { ClubDistance, RangeDrill } from '../../types';
 import { router } from 'expo-router';
 
@@ -33,15 +34,19 @@ export default function ClubsScreen() {
   const [carry, setCarry] = useState('');
   const [total, setTotal] = useState('');
   const [ballSpeed, setBallSpeed] = useState('');
+  const [loadError, setLoadError] = useState(false);
+
+  const load = async () => {
+    const data = await getClubDistances();
+    setClubDistances(data);
+    const drills = await getRangeDrills();
+    setDrillStats(computeDrillStats(drills));
+    setLoadError(consumeReadError());
+  };
 
   useFocusEffect(useCallback(() => {
-    const load = async () => {
-      const data = await getClubDistances();
-      setClubDistances(data);
-      const drills = await getRangeDrills();
-      setDrillStats(computeDrillStats(drills));
-    };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []));
 
   // Aggregate every drill shot's distance by club → average / count / range.
@@ -144,6 +149,8 @@ export default function ClubsScreen() {
 
         <Text style={styles.title}>🏌️ My Club Distances</Text>
         <Text style={styles.subtitle}>Log your Trackman distances as a reference for the course</Text>
+
+        {loadError && <LoadErrorBanner onRetry={load} />}
 
         {CLUB_LIST.map((club) => {
           const data = clubDistances[club.name];
