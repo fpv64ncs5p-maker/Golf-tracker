@@ -11,7 +11,7 @@ import {
 import type {
   Course, HoleDefinition, RangeDrill, RangeDrillHole, RangeDrillShot, DraftRangeDrill,
 } from '../types';
-import { PUTTS_PER_HOLE } from '../constants/scoring';
+import { PUTTS_PER_HOLE, NEAR_GREEN_M } from '../constants/scoring';
 
 // ── Club list ─────────────────────────────────────────────────────────────────
 
@@ -422,12 +422,27 @@ export default function RangeDrillScreen() {
     const holeStrokes = currentShots.length;
     const completedCount = completedHoles.length;
 
-    // Running distance to the green: hole length minus the distances hit so far.
+    // Running distance to the green. Overshoots "bounce back": hitting 100m on
+    // a 58m hole leaves you 42m from the green on the far side, so each shot
+    // does remaining = |remaining − distance|. "On / near the green" only when
+    // within NEAR_GREEN_M metres.
     const holeLength = currentHoleDef.distance ?? null;
-    const distanceCovered = currentShots.reduce((sum, s) => sum + (s.distance ?? 0), 0);
-    const remaining = holeLength != null ? holeLength - distanceCovered : null;
+    let remaining: number | null = null;
+    let wentPast = false;
+    if (holeLength != null) {
+      remaining = holeLength;
+      for (const s of currentShots) {
+        const d = s.distance ?? 0;
+        wentPast = d > remaining;
+        remaining = Math.abs(remaining - d);
+      }
+    }
+    const nearGreen = remaining != null && remaining <= NEAR_GREEN_M;
     const remainingLabel =
-      remaining == null ? null : remaining > 0 ? `${remaining}m to the green` : '⛳ On / near the green';
+      remaining == null ? null
+      : nearGreen ? '⛳ On / near the green'
+      : wentPast ? `⚠️ ${remaining}m past the green`
+      : `${remaining}m to the green`;
 
     return (
       <KeyboardAvoidingView
@@ -459,7 +474,11 @@ export default function RangeDrillScreen() {
             <View style={styles.holeCardRight}>
               <Text style={styles.holeDistance}>📏 {currentHoleDef.distance}m</Text>
               {remainingLabel && (
-                <Text style={[styles.holeRemaining, remaining != null && remaining <= 0 && styles.holeRemainingGreen]}>
+                <Text style={[
+                  styles.holeRemaining,
+                  nearGreen && styles.holeRemainingGreen,
+                  !nearGreen && wentPast && styles.holeRemainingPast,
+                ]}>
                   {remainingLabel}
                 </Text>
               )}
@@ -489,9 +508,17 @@ export default function RangeDrillScreen() {
         <View style={styles.inputPanel}>
           {/* Live distance to the green */}
           {remainingLabel && (
-            <View style={[styles.remainingBar, remaining != null && remaining <= 0 && styles.remainingBarGreen]}>
-              <Text style={[styles.remainingBarText, remaining != null && remaining <= 0 && styles.remainingBarTextGreen]}>
-                {remaining != null && remaining > 0 ? '🎯 ' : ''}{remainingLabel}
+            <View style={[
+              styles.remainingBar,
+              nearGreen && styles.remainingBarGreen,
+              !nearGreen && wentPast && styles.remainingBarPast,
+            ]}>
+              <Text style={[
+                styles.remainingBarText,
+                nearGreen && styles.remainingBarTextGreen,
+                !nearGreen && wentPast && styles.remainingBarTextPast,
+              ]}>
+                {!nearGreen && !wentPast ? '🎯 ' : ''}{remainingLabel}
               </Text>
             </View>
           )}
@@ -705,6 +732,7 @@ const styles = StyleSheet.create({
   holeDistance: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
   holeRemaining: { fontSize: 13, fontWeight: '600', color: '#bbdefb', marginTop: 2 },
   holeRemainingGreen: { color: '#a5d6a7' },
+  holeRemainingPast: { color: '#ffe082' },
 
   shotsScroll: { flex: 1, paddingHorizontal: 16 },
   shotsContent: { paddingVertical: 8 },
@@ -728,8 +756,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10, alignItems: 'center',
   },
   remainingBarGreen: { backgroundColor: '#e8f5e9' },
+  remainingBarPast: { backgroundColor: '#fff8e1' },
   remainingBarText: { fontSize: 15, fontWeight: 'bold', color: '#1565C0' },
   remainingBarTextGreen: { color: '#2e7d32' },
+  remainingBarTextPast: { color: '#b26a00' },
   clubScroll: { marginBottom: 10 },
   clubScrollContent: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
   clubChip: {

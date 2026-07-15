@@ -6,3 +6,9 @@
  * we add a flat number of putts per hole. 2 is the standard "regulation" assumption.
  */
 export const PUTTS_PER_HOLE = 2;
+
+/**
+ * Within this many metres of the green counts as "on / near the green"
+ * during a range drill (roughly a green's radius — a chip or long putt away).
+ */
+export const NEAR_GREEN_M = 10;
