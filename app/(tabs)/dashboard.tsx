@@ -476,7 +476,7 @@ export default function DashboardScreen() {
                       <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
                     </View>
                     <Text style={styles.cardDetail}>
-                      {item.holes.length} holes  ·  est {strokes}  ·  {scoreLabel(vsPar)}  ·  ⏱ {formatTime(item.duration)}
+                      {item.holes.length} holes{item.tee ? `  ·  Tee: ${item.tee}` : ''}  ·  est {strokes}  ·  {scoreLabel(vsPar)}  ·  ⏱ {formatTime(item.duration)}
                     </Text>
                     {item.notes ? (
                       <Text style={styles.cardNotes}>📝 {item.notes}</Text>

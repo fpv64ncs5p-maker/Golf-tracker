@@ -219,7 +219,9 @@ export default function RangeDrillDetailScreen() {
           )}
         </View>
 
-        <Text style={styles.title}>{drill.courseName}</Text>
+        <Text style={styles.title}>
+          {drill.courseName}{drill.tee ? ` · ${drill.tee} tees` : ''}
+        </Text>
 
         {/* Date */}
         {editing ? (

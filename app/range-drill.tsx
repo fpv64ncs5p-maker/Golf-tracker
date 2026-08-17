@@ -12,6 +12,7 @@ import type {
   Course, HoleDefinition, RangeDrill, RangeDrillHole, RangeDrillShot, DraftRangeDrill,
 } from '../types';
 import { PUTTS_PER_HOLE, NEAR_GREEN_M } from '../constants/scoring';
+import { TEE_COLOUR_MAP } from '../constants/theme';
 
 // ── Club list ─────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,15 @@ const CLUBS = [
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmtVsPar = (v: number) => (v === 0 ? 'E' : v > 0 ? `+${v}` : `${v}`);
+
+// Resolve each hole's yardage for the chosen tee. Courses without per-tee
+// distances silently fall back to the generic hole distance.
+const holesForTee = (holes: HoleDefinition[], tee: string | null): HoleDefinition[] =>
+  holes.map(h => ({
+    ...h,
+    distance: (tee ? h.distanceByTee?.[tee] : undefined) ?? h.distance ?? null,
+  }));
+
 const fmtTime = (s: number) => {
   const m = Math.floor(s / 60);
   const sec = s % 60;
@@ -43,8 +53,12 @@ export default function RangeDrillScreen() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   // Holes actually being played this drill (a course subset: full 18, front 9, or back 9)
   const [selectedHoles, setSelectedHoles] = useState<HoleDefinition[]>([]);
-  // Course awaiting a length choice (only courses with > 9 holes)
+  // Course awaiting a tee + length choice
   const [pendingCourse, setPendingCourse] = useState<Course | null>(null);
+  // Tee colour chosen in the start modal (null when the course has no tees saved)
+  const [pendingTee, setPendingTee] = useState<string | null>(null);
+  // Tee the active drill is being played off
+  const [selectedTee, setSelectedTee] = useState<string | null>(null);
   // An autosaved, unfinished drill that can be resumed
   const [draft, setDraft] = useState<DraftRangeDrill | null>(null);
 
@@ -75,6 +89,7 @@ export default function RangeDrillScreen() {
     if (phase !== 'active' || !selectedCourse) return;
     saveDraftRangeDrill({
       course: selectedCourse,
+      tee: selectedTee ?? undefined,
       holesToPlay: selectedHoles,
       holeIndex,
       completedHoles,
@@ -104,24 +119,23 @@ export default function RangeDrillScreen() {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  // A course tapped in the list: go straight in for ≤9-hole courses,
-  // otherwise ask Full 18 / Front 9 / Back 9 first.
+  // A course tapped in the list opens the start modal: tee colour first,
+  // then Full / Front 9 / Back 9 (or a single Start for ≤9-hole courses).
   const pickCourse = (course: Course) => {
     if (!course.holes || course.holes.length === 0) {
       const msg = 'This course has no hole data. Add holes in Manage Courses first.';
       if (Platform.OS === 'web') alert(msg); else Alert.alert('No hole data', msg);
       return;
     }
-    if (course.holes.length > 9) {
-      setPendingCourse(course);
-    } else {
-      startDrill(course, [...course.holes].sort((a, b) => a.hole - b.hole));
-    }
+    const teeNames = Object.keys(course.tees || {});
+    setPendingTee(teeNames[0] ?? null);
+    setPendingCourse(course);
   };
 
   const resumeDraft = () => {
     if (!draft) return;
     setSelectedCourse(draft.course);
+    setSelectedTee(draft.tee ?? null);
     setSelectedHoles(draft.holesToPlay);
     setHoleIndex(draft.holeIndex);
     setCompletedHoles(draft.completedHoles);
@@ -147,10 +161,11 @@ export default function RangeDrillScreen() {
     }
   };
 
-  const startDrill = (course: Course, holes: HoleDefinition[]) => {
+  const startDrill = (course: Course, holes: HoleDefinition[], tee: string | null) => {
     setPendingCourse(null);
     setSelectedCourse(course);
-    setSelectedHoles(holes);
+    setSelectedTee(tee);
+    setSelectedHoles(holesForTee(holes, tee));
     setHoleIndex(0);
     setCompletedHoles([]);
     setCurrentShots([]);
@@ -163,17 +178,17 @@ export default function RangeDrillScreen() {
   // Length options derived from the course awaiting a choice
   const startFull = () => {
     if (!pendingCourse) return;
-    startDrill(pendingCourse, [...pendingCourse.holes].sort((a, b) => a.hole - b.hole));
+    startDrill(pendingCourse, [...pendingCourse.holes].sort((a, b) => a.hole - b.hole), pendingTee);
   };
   const startFront9 = () => {
     if (!pendingCourse) return;
     const sorted = [...pendingCourse.holes].sort((a, b) => a.hole - b.hole);
-    startDrill(pendingCourse, sorted.slice(0, 9));
+    startDrill(pendingCourse, sorted.slice(0, 9), pendingTee);
   };
   const startBack9 = () => {
     if (!pendingCourse) return;
     const sorted = [...pendingCourse.holes].sort((a, b) => a.hole - b.hole);
-    startDrill(pendingCourse, sorted.slice(-9));
+    startDrill(pendingCourse, sorted.slice(-9), pendingTee);
   };
 
   const addShot = () => {
@@ -265,6 +280,7 @@ export default function RangeDrillScreen() {
         id: Date.now().toString(),
         courseId: selectedCourse.id,
         courseName: selectedCourse.name,
+        tee: selectedTee ?? undefined,
         date: new Date().toISOString(),
         duration: seconds,
         notes,
@@ -316,6 +332,12 @@ export default function RangeDrillScreen() {
     const countries = Object.keys(grouped).sort();
 
     const pendingHoleCount = pendingCourse?.holes?.length ?? 0;
+    const pendingTeeNames = Object.keys(pendingCourse?.tees || {});
+    // Total yardage off each tee, so the chips show what you're choosing between
+    const teeTotal = (teeName: string) =>
+      (pendingCourse?.holes || []).reduce(
+        (sum, h) => sum + (h.distanceByTee?.[teeName] ?? h.distance ?? 0), 0,
+      );
 
     return (
       <>
@@ -332,7 +354,7 @@ export default function RangeDrillScreen() {
             <TouchableOpacity style={styles.resumeMain} onPress={resumeDraft}>
               <Text style={styles.resumeTitle}>▶ Resume drill</Text>
               <Text style={styles.resumeSub}>
-                {draft.course.name} · {draft.completedHoles.length}/{draft.holesToPlay.length} holes done
+                {draft.course.name}{draft.tee ? ` · ${draft.tee}` : ''} · {draft.completedHoles.length}/{draft.holesToPlay.length} holes done
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.resumeDiscard} onPress={discardDraft}>
@@ -395,17 +417,55 @@ export default function RangeDrillScreen() {
         >
           <TouchableOpacity style={styles.modalSheet} activeOpacity={1}>
             <Text style={styles.modalTitle}>{pendingCourse?.name}</Text>
+
+            {/* Tee colour — only for courses with tees saved */}
+            {pendingTeeNames.length > 0 && (
+              <>
+                <Text style={styles.modalSubtitle}>Which tee?</Text>
+                <View style={styles.teeRow}>
+                  {pendingTeeNames.map(teeName => {
+                    const colours = TEE_COLOUR_MAP[teeName] || { color: '#888', text: '#fff' };
+                    const total = teeTotal(teeName);
+                    return (
+                      <TouchableOpacity
+                        key={teeName}
+                        style={[
+                          styles.teeBtn,
+                          { backgroundColor: colours.color, borderColor: colours.border || colours.color },
+                          pendingTee === teeName && styles.teeBtnSelected,
+                        ]}
+                        onPress={() => setPendingTee(teeName)}
+                      >
+                        <Text style={[styles.teeBtnText, { color: colours.text }]}>{teeName}</Text>
+                        {total > 0 && (
+                          <Text style={[styles.teeBtnDist, { color: colours.text }]}>{total}m</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
             <Text style={styles.modalSubtitle}>How many holes?</Text>
 
-            <TouchableOpacity style={styles.lengthBtn} onPress={startFull}>
-              <Text style={styles.lengthBtnText}>Full round · {pendingHoleCount} holes</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.lengthBtn} onPress={startFront9}>
-              <Text style={styles.lengthBtnText}>Front 9 · holes 1–9</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.lengthBtn} onPress={startBack9}>
-              <Text style={styles.lengthBtnText}>Back 9 · last 9 holes</Text>
-            </TouchableOpacity>
+            {pendingHoleCount > 9 ? (
+              <>
+                <TouchableOpacity style={styles.lengthBtn} onPress={startFull}>
+                  <Text style={styles.lengthBtnText}>Full round · {pendingHoleCount} holes</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.lengthBtn} onPress={startFront9}>
+                  <Text style={styles.lengthBtnText}>Front 9 · holes 1–9</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.lengthBtn} onPress={startBack9}>
+                  <Text style={styles.lengthBtnText}>Back 9 · last 9 holes</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={styles.lengthBtn} onPress={startFull}>
+                <Text style={styles.lengthBtnText}>Start drill · {pendingHoleCount} holes</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity style={styles.lengthCancel} onPress={() => setPendingCourse(null)}>
               <Text style={styles.lengthCancelText}>Cancel</Text>
@@ -453,7 +513,9 @@ export default function RangeDrillScreen() {
         {/* ── Header ── */}
         <View style={styles.activeHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.courseTitleSmall}>{selectedCourse?.name}</Text>
+            <Text style={styles.courseTitleSmall}>
+              {selectedCourse?.name}{selectedTee ? ` · ${selectedTee} tees` : ''}
+            </Text>
             <Text style={styles.progressText}>
               Hole {completedCount + 1} of {totalHoles}
             </Text>
@@ -588,7 +650,9 @@ export default function RangeDrillScreen() {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>🏁 Drill Complete!</Text>
-      <Text style={styles.subtitle}>{selectedCourse?.name}</Text>
+      <Text style={styles.subtitle}>
+        {selectedCourse?.name}{selectedTee ? ` · ${selectedTee} tees` : ''}
+      </Text>
 
       {/* Score summary card */}
       <View style={styles.summaryCard}>
@@ -820,6 +884,15 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#222', textAlign: 'center' },
   modalSubtitle: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 2, marginBottom: 16 },
+  teeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 18 },
+  teeBtn: {
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 20, borderWidth: 2, alignItems: 'center', minWidth: 72,
+  },
+  teeBtnSelected: { borderColor: '#1565C0', transform: [{ scale: 1.06 }] },
+  teeBtnText: { fontSize: 13, fontWeight: 'bold' },
+  teeBtnDist: { fontSize: 11, opacity: 0.85, marginTop: 1 },
+
   lengthBtn: {
     backgroundColor: '#1565C0', paddingVertical: 14,
     borderRadius: 12, alignItems: 'center', marginBottom: 10,

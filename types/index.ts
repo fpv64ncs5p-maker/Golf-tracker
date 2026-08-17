@@ -226,6 +226,7 @@ export interface RangeDrill {
   id: string;
   courseId: string;
   courseName: string;
+  tee?: string;                    // tee colour played (e.g. 'White'), if the course has tees
   date: string;
   duration: number;
   notes: string;
@@ -238,7 +239,8 @@ export interface RangeDrill {
  */
 export interface DraftRangeDrill {
   course: Course;
-  holesToPlay: HoleDefinition[];   // the chosen subset (full 18, front 9, or back 9)
+  tee?: string;                    // tee colour chosen at start, if any
+  holesToPlay: HoleDefinition[];   // the chosen subset (full 18, front 9, or back 9), distances already resolved for the tee
   holeIndex: number;
   completedHoles: RangeDrillHole[];
   currentShots: RangeDrillShot[];
