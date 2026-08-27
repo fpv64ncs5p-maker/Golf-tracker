@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { getSessions, getRounds, getCourses, getClubDistances, consumeReadError } from '../../services/storage';
 import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Course, ClubDistance } from '../../types';
+import { ratingForPlay } from '../../services/rating';
 
 // Club order for display (tee to green)
 const CLUB_ORDER = ['Driver','3W','5W','4H','5H','3i','4i','5i','6i','7i','8i','9i','PW','GW','SW','LW','Putter'];
@@ -105,7 +106,6 @@ export default function InsightsScreen() {
 
   // ── Look up CR/Slope from courses when missing from round ───
   const enrichRound = (r: Round) => {
-    if (r.courseRating && r.slopeRating) return r;
     // Try to find the matching course and tee
     const course = courses.find((c: Course) => {
       if (r.courseId && c.id === r.courseId) return true;
@@ -114,10 +114,31 @@ export default function InsightsScreen() {
       return rName === cName || rName.includes(cName) || cName.includes(rName);
     });
     if (!course) return r;
-    const tee = r.tee;
-    const teeData = course.tees?.[tee];
-    if (!teeData?.rating || !teeData?.slope) return r;
-    return { ...r, courseRating: teeData.rating, slopeRating: teeData.slope };
+    const teeData = course.tees?.[r.tee];
+    if (!teeData) return r;
+
+    const courseHoleCount = (course.holes || []).length;
+    const isNineHoleCourse = courseHoleCount > 0 && courseHoleCount <= 9;
+
+    // Which nine was played. Older rounds have no `nine` field, so infer it from
+    // the hole numbers actually recorded (a back nine runs 10-18).
+    const nine = r.nine
+      ?? (r.holes <= 9 && !isNineHoleCourse && (r.holeData || []).some(h => h.hole > 9)
+            ? 'back'
+            : r.holes <= 9 && !isNineHoleCourse ? 'front' : undefined);
+
+    const play = ratingForPlay(teeData, r.holes, nine, isNineHoleCourse);
+
+    // The course is the source of truth: correcting a tee's CR/Slope in the course
+    // editor re-rates every past round there. Rounds snapshot CR/Slope at save time,
+    // so without this a round keeps whatever was stored when it was played — which is
+    // how Campo Real rounds would have stayed on the old men's table even after the
+    // tees were fixed. The stored values are the fallback for when the course (or the
+    // tee) no longer exists.
+    if (play.rating != null && play.slope != null) {
+      return { ...r, nine, courseRating: play.rating, slopeRating: play.slope };
+    }
+    return r;
   };
 
   // ── Handicap calculation (WHS formula) ─────────────────────
@@ -147,8 +168,10 @@ export default function InsightsScreen() {
     };
 
     // Effective CR/Slope for the holes actually played.
-    // Halve the CR only when it's a full-18 rating used for a 9-hole round.
-    // Detect by magnitude: 18-hole CRs are ~59–72, true 9-hole CRs are ~23–36.
+    // enrichRound already substitutes the official front/back-nine rating where the
+    // course publishes one. This only has to catch the leftover case: a 9-hole round
+    // still carrying a full-18 CR, which gets halved as an estimate.
+    // Detect by magnitude: 18-hole CRs are ~59–76, true 9-hole CRs are ~23–39.
     const effective = (r: Round) => {
       const isNineOnEighteen = r.holes === 9 && (r.courseRating ?? 0) > 55;
       const effectiveCR = isNineOnEighteen ? (r.courseRating ?? 0) / 2 : (r.courseRating ?? 0);
@@ -224,10 +247,18 @@ export default function InsightsScreen() {
     const handicap = parseFloat(indexFromDifferentials(differentials).toFixed(1));
     const useBest = WHS_TABLE[Math.min(count, 20)] ?? 8;
 
+    // Rounds that couldn't be used (missing CR/Slope or no saved score) — surfaced on the card so
+    // a logged round never disappears from the index silently.
+    const skipped = enriched.filter((r: Round) => !(
+      r.courseRating && r.slopeRating && r.coursePar && r.stats?.scoreVsPar != null
+    ));
+
     return {
       handicap,
       roundsUsed: useBest,
       roundsTotal: count,
+      skippedCount: skipped.length,
+      skippedNames: [...new Set(skipped.map((r: Round) => r.courseName).filter(Boolean))],
       differentials: differentials.map(d => d.toFixed(1)),
     };
   };
@@ -437,6 +468,14 @@ export default function InsightsScreen() {
             <Text style={styles.handicapSub}>
               Based on best {handicap.roundsUsed} of {handicap.roundsTotal} rounds · WHS formula
             </Text>
+            {handicap.skippedCount > 0 && (
+              <TouchableOpacity onPress={() => router.push('/courses')}>
+                <Text style={styles.handicapWarn}>
+                  ⚠️ {handicap.skippedCount} of {rounds.length} logged rounds not counted — missing Course Rating / Slope
+                  {handicap.skippedNames.length > 0 ? ` (${handicap.skippedNames.join(', ')})` : ''}. Tap to add them.
+                </Text>
+              </TouchableOpacity>
+            )}
           </>
         ) : (
           <Text style={styles.sub}>
@@ -608,6 +647,7 @@ const styles = StyleSheet.create({
   highlight: { fontSize: 28, fontWeight: 'bold', color: '#4CAF50' },
   handicapValue: { fontSize: 52, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center', marginVertical: 8 },
   handicapSub: { fontSize: 13, color: '#555', textAlign: 'center' },
+  handicapWarn: { fontSize: 12, color: '#b26a00', textAlign: 'center', marginTop: 8, lineHeight: 17 },
   sub: { fontSize: 14, color: '#666', marginTop: 4 },
   body: { fontSize: 15, color: '#444', marginBottom: 4 },
   // Club analytics

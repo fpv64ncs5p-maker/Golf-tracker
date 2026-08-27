@@ -51,6 +51,9 @@ export default function RoundHoleScreen() {
   const [par, setPar] = useState(4);
   const [holeDistance, setHoleDistance] = useState<number | null>(null);
   const [savedHoles, setSavedHoles] = useState<HoleData[]>([]);
+  // Actual hole numbers being played. A back-nine round runs 10-18, not 1-9,
+  // so navigation and the progress strip follow this list rather than 1..total.
+  const [holeNumbers, setHoleNumbers] = useState<number[]>([]);
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
   const [showRules, setShowRules] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -93,6 +96,10 @@ export default function RoundHoleScreen() {
         if (dist) setHoleDistance(dist);
       }
 
+      // Which holes this round covers (10-18 for a back nine)
+      const nums = (round.courseHoles || []).map(h => h.hole).sort((a, b) => a - b);
+      setHoleNumbers(nums.length > 0 ? nums : Array.from({ length: total }, (_, i) => i + 1));
+
       // Load all saved holes for the progress strip
       setSavedHoles(round.holeData || []);
 
@@ -105,7 +112,7 @@ export default function RoundHoleScreen() {
       }
     };
     loadHoleData();
-  }, [hole]);
+  }, [hole, total]);
 
   const isTeeShotNext = strokes.length === 0;
   const targetLabel = isTeeShotNext ? (par === 3 ? 'Green' : 'Fairway') : 'On Target';
@@ -173,17 +180,26 @@ export default function RoundHoleScreen() {
     round.holeData = [...existing, holeData].sort((a, b) => a.hole - b.hole);
     await saveDraftRound(round);
 
-    if (hole >= total) {
+    const idx = holeNumbers.indexOf(hole);
+    const next = idx >= 0 ? holeNumbers[idx + 1] : hole + 1;
+    if (next === undefined || (idx < 0 && hole >= total)) {
       router.push('/round-complete');
     } else {
-      router.replace({ pathname: '/round-hole', params: { holeNumber: hole + 1, totalHoles: total } });
+      router.replace({ pathname: '/round-hole', params: { holeNumber: next, totalHoles: total } });
     }
   };
 
   const goToPreviousHole = async () => {
-    if (hole <= 1) return;
-    router.replace({ pathname: '/round-hole', params: { holeNumber: hole - 1, totalHoles: total } });
+    const idx = holeNumbers.indexOf(hole);
+    const prev = idx > 0 ? holeNumbers[idx - 1] : undefined;
+    if (prev === undefined) return;
+    router.replace({ pathname: '/round-hole', params: { holeNumber: prev, totalHoles: total } });
   };
+
+  // Neighbouring hole numbers, following the actual holes played (10-18 on a back nine)
+  const holeIdx = holeNumbers.indexOf(hole);
+  const prevHole = holeIdx > 0 ? holeNumbers[holeIdx - 1] : undefined;
+  const nextHole = holeIdx >= 0 ? holeNumbers[holeIdx + 1] : (hole < total ? hole + 1 : undefined);
 
   // Which step is the picker on?
   const pickerStep = !pendingClub ? 'club' : !pendingDirection ? 'direction' : 'penalty';
@@ -309,7 +325,7 @@ export default function RoundHoleScreen() {
 
       {/* Hole progress strip */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeStrip} contentContainerStyle={styles.holeStripContent}>
-        {Array.from({ length: total }, (_, i) => i + 1).map(h => {
+        {(holeNumbers.length > 0 ? holeNumbers : Array.from({ length: total }, (_, i) => i + 1)).map(h => {
           const saved = savedHoles.find(s => s.hole === h);
           const isCurrent = h === hole;
           const diff = saved ? saved.totalStrokes - saved.par : null;
@@ -581,11 +597,11 @@ export default function RoundHoleScreen() {
       {/* Hole navigation */}
       <View style={styles.holeNavRow}>
         <TouchableOpacity
-          style={[styles.holeNavBtn, styles.holeNavPrev, hole <= 1 && styles.holeNavDisabled]}
-          disabled={hole <= 1}
+          style={[styles.holeNavBtn, styles.holeNavPrev, prevHole === undefined && styles.holeNavDisabled]}
+          disabled={prevHole === undefined}
           onPress={goToPreviousHole}>
-          <Text style={[styles.holeNavText, hole <= 1 && styles.holeNavTextDisabled]}>
-            ← H{hole - 1}
+          <Text style={[styles.holeNavText, prevHole === undefined && styles.holeNavTextDisabled]}>
+            ← H{prevHole ?? hole}
           </Text>
         </TouchableOpacity>
 
@@ -594,7 +610,7 @@ export default function RoundHoleScreen() {
           disabled={strokes.length === 0}
           onPress={saveHoleAndContinue}>
           <Text style={[styles.holeNavNextText, strokes.length === 0 && styles.holeNavTextDisabled]}>
-            {hole >= total ? '🏁 Finish' : `H${hole + 1} →`}
+            {nextHole === undefined ? '🏁 Finish' : `H${nextHole} →`}
           </Text>
         </TouchableOpacity>
       </View>

@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert,
 import { router } from 'expo-router';
 import { getCourses, saveRounds, getRounds } from '../services/storage';
 import type { Course, Round, HoleData, RoundStats } from '../types';
+import { ratingForPlay } from '../services/rating';
 
 export default function RoundImportScreen() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -85,8 +86,15 @@ export default function RoundImportScreen() {
       ? new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).toISOString()
       : new Date().toISOString();
 
+    // Which nine was played, and the official rating for it
+    const playedNine = showFrontBackToggle ? nineHalfSelection : undefined;
+    const play = ratingForPlay(teeData, totalHoles, playedNine, isNineHoleCourse);
+
     // Build hole data
     const holeOffset = showFrontBackToggle && nineHalfSelection === 'back' ? 9 : 0;
+    const playedHoles = [...courseHoles]
+      .sort((a, b) => a.hole - b.hole)
+      .filter(h => h.hole > holeOffset && h.hole <= holeOffset + totalHoles);
     const holeData: HoleData[] = scores.map((s, i) => {
       const hole = i + 1 + holeOffset;
       const par = getHolePar(i);
@@ -129,9 +137,12 @@ export default function RoundImportScreen() {
       date: parsedDate,
       tee: selectedTee,
       holes: totalHoles,
+      nine: playedNine,
       coursePar: coursePar || 0,
-      courseRating: teeData?.rating ?? undefined,
-      slopeRating: teeData?.slope ?? undefined,
+      courseRating: play.rating ?? undefined,
+      slopeRating: play.slope ?? undefined,
+      // Snapshot the holes played (with Stroke Index) so Adjusted Gross Score can run
+      courseHoles: playedHoles,
       holeData,
       stats,
       imported: true,
@@ -179,15 +190,33 @@ export default function RoundImportScreen() {
         <>
           <Text style={styles.sectionTitle}>Tee</Text>
           <View style={styles.teeRow}>
-            {Object.entries(selectedCourse.tees || {}).map(([tee, data]: any) => (
-              <TouchableOpacity key={tee}
-                style={[styles.teeBtn, selectedTee === tee && styles.teeBtnSelected]}
-                onPress={() => setSelectedTee(tee)}>
-                <Text style={[styles.teeBtnText, selectedTee === tee && styles.teeBtnTextSelected]}>{tee}</Text>
-                {data.rating && <Text style={[styles.teeCR, selectedTee === tee && styles.teeBtnTextSelected]}>CR {data.rating}</Text>}
-              </TouchableOpacity>
-            ))}
+            {Object.entries(selectedCourse.tees || {}).map(([tee, data]: any) => {
+              // Show the CR that will actually be used for the holes being entered
+              const shown = ratingForPlay(
+                data,
+                totalHoles,
+                showFrontBackToggle ? nineHalfSelection : undefined,
+                isNineHoleCourse,
+              );
+              return (
+                <TouchableOpacity key={tee}
+                  style={[styles.teeBtn, selectedTee === tee && styles.teeBtnSelected]}
+                  onPress={() => setSelectedTee(tee)}>
+                  <Text style={[styles.teeBtnText, selectedTee === tee && styles.teeBtnTextSelected]}>{tee}</Text>
+                  {shown.rating != null && (
+                    <Text style={[styles.teeCR, selectedTee === tee && styles.teeBtnTextSelected]}>
+                      CR {shown.rating}{shown.isOfficialNine ? '*' : ''}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
+          {showFrontBackToggle && (
+            <Text style={styles.teeRatingNote}>
+              * official {nineHalfSelection === 'back' ? 'back' : 'front'} nine rating
+            </Text>
+          )}
         </>
       )}
 
@@ -334,6 +363,7 @@ const styles = StyleSheet.create({
   teeBtnText: { fontSize: 14, fontWeight: '600', color: '#333' },
   teeBtnTextSelected: { color: '#fff' },
   teeCR: { fontSize: 10, color: '#888', marginTop: 2 },
+  teeRatingNote: { fontSize: 11, color: '#888', marginTop: 4, marginLeft: 2 },
 
   dateInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 16, backgroundColor: '#fafafa' },
 

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { getCourses, saveDraftRound } from '../services/storage';
 import { TEE_COLOUR_MAP } from '../constants/theme';
+import { ratingForPlay } from '../services/rating';
 import { OPENWEATHER_API_KEY } from '../constants/weather';
 import type { Course, DraftRound } from '../types';
 
@@ -29,6 +30,7 @@ export default function RoundSetupScreen() {
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [selectedTee, setSelectedTee] = useState<string | null>(null);
   const [holes, setHoles] = useState('18');
+  const [nineHalf, setNineHalf] = useState<'front' | 'back'>('front');
   const [wind, setWind] = useState('Calm');
   const [sky, setSky] = useState('Sunny');
   const [ground, setGround] = useState('Normal');
@@ -72,6 +74,17 @@ export default function RoundSetupScreen() {
     ? selectedCourse.tees[selectedTee]
     : null;
 
+  // Front/Back nine choice only applies to 9 holes played on an 18-hole course.
+  const courseHoleTotal = (selectedCourse?.holes || []).length;
+  const isEighteenHoleCourse = courseHoleTotal > 9;
+  const showFrontBackToggle = holes === '9' && isEighteenHoleCourse;
+  const playRating = ratingForPlay(
+    teeData,
+    parseInt(holes),
+    showFrontBackToggle ? nineHalf : undefined,
+    courseHoleTotal > 0 && courseHoleTotal <= 9,
+  );
+
   const canStart = selectedCourse && selectedTee;
 
   const startRound = async () => {
@@ -80,31 +93,32 @@ export default function RoundSetupScreen() {
     const courseHoleCount = (selectedCourse.holes || []).length;
     const isNineHoleCourse = courseHoleCount > 0 && courseHoleCount <= 9;
 
-    // Use saved hole data if available (trim to selected holes if needed)
-    const courseHoles = (selectedCourse.holes || [])
-      .filter(h => h.hole <= totalHoles)
-      .sort((a, b) => a.hole - b.hole);
+    // Which nine is being played (only meaningful for 9 holes on an 18-hole course)
+    const playedNine = totalHoles <= 9 && !isNineHoleCourse ? nineHalf : undefined;
 
-    // Calculate par correctly for 9-hole vs 18-hole courses
-    let coursePar = null;
-    if (teeData?.par) {
-      if (isNineHoleCourse) {
-        // 9-hole course: stored par is for 9 holes, double it for 18
-        coursePar = totalHoles > 9 ? teeData.par * 2 : teeData.par;
-      } else {
-        // 18-hole course: stored par is for 18 holes, halve it for 9
-        coursePar = totalHoles <= 9 ? Math.round(teeData.par / 2) : teeData.par;
-      }
-    }
+    // Use saved hole data if available, taking the chosen nine for 9-hole rounds
+    const allHoles = (selectedCourse.holes || []).sort((a, b) => a.hole - b.hole);
+    const courseHoles = playedNine === 'back'
+      ? allHoles.filter(h => h.hole > 9 && h.hole <= 18)
+      : allHoles.filter(h => h.hole <= totalHoles);
+
+    // Par / CR / Slope for the holes actually played. Uses the official 9-hole
+    // rating when the tee has one, otherwise halves the 18-hole CR.
+    const play = ratingForPlay(teeData, totalHoles, playedNine, isNineHoleCourse);
+    // Prefer the summed par of the actual holes when we have them (a nine is not
+    // always exactly half of par), falling back to the tee's rated par.
+    const summedPar = courseHoles.reduce((sum, h) => sum + (h.par ?? 0), 0);
+    const coursePar = summedPar > 0 ? summedPar : play.par;
 
     const roundData: DraftRound = {
       courseId: selectedCourse.id,
       courseName: selectedCourse.name,
       tee: selectedTee,
       holes: totalHoles,
+      nine: playedNine,
       coursePar: coursePar || 0,
-      courseRating: teeData?.rating ?? undefined,
-      slopeRating: teeData?.slope ?? undefined,
+      courseRating: play.rating ?? undefined,
+      slopeRating: play.slope ?? undefined,
       weather: { wind, sky, ground, tempC: weatherTemp },
       date: new Date().toISOString(),
       notes: '',
@@ -126,7 +140,9 @@ export default function RoundSetupScreen() {
       courseHoles, // per-hole par + distance from course setup
     };
     await saveDraftRound(roundData);
-    router.push({ pathname: '/round-hole', params: { holeNumber: 1, totalHoles: holes } });
+    // Start at the first hole actually played (10 for a back nine)
+    const firstHole = courseHoles[0]?.hole ?? 1;
+    router.push({ pathname: '/round-hole', params: { holeNumber: firstHole, totalHoles: holes } });
   };
 
   const WeatherSelector = ({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (o: string) => void }) => (
@@ -228,10 +244,22 @@ export default function RoundSetupScreen() {
             {selectedTee && (
               <View style={styles.teeDetails}>
                 {teeData?.par ? (
-                  <Text style={styles.teeDetailsText}>
-                    Par {teeData.par}{teeData.rating ? ` · CR ${teeData.rating}` : ''}
-                    {teeData.slope ? ` · Slope ${teeData.slope}` : ''}
-                  </Text>
+                  <>
+                    <Text style={styles.teeDetailsText}>
+                      Par {playRating.par ?? teeData.par}
+                      {playRating.rating ? ` · CR ${playRating.rating}` : ''}
+                      {playRating.slope ? ` · Slope ${playRating.slope}` : ''}
+                    </Text>
+                    {holes === '9' && isEighteenHoleCourse && (
+                      <Text style={styles.teeRatingSourceText}>
+                        {playRating.isOfficialNine
+                          ? `Official ${nineHalf === 'back' ? 'back' : 'front'} nine rating`
+                          : playRating.rating
+                            ? 'Estimated — no official 9-hole rating for this tee'
+                            : ''}
+                      </Text>
+                    )}
+                  </>
                 ) : (
                   <TouchableOpacity onPress={() => router.push('/courses')}>
                     <Text style={styles.teeNoDataText}>
@@ -255,6 +283,24 @@ export default function RoundSetupScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Front 9 / Back 9 — only for 9 holes on an 18-hole course */}
+        {showFrontBackToggle && (
+          <>
+            <Text style={styles.sectionTitle}>Which Nine</Text>
+            <View style={styles.holesRow}>
+              {(['front', 'back'] as const).map(half => (
+                <TouchableOpacity key={half}
+                  style={[styles.holeBtn, nineHalf === half && styles.holeBtnSelected]}
+                  onPress={() => setNineHalf(half)}>
+                  <Text style={[styles.holeBtnText, nineHalf === half && styles.holeBtnTextSelected]}>
+                    {half === 'front' ? 'Front 9 (1–9)' : 'Back 9 (10–18)'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Weather */}
         <View style={styles.sectionHeader}>
@@ -310,6 +356,7 @@ const styles = StyleSheet.create({
   teeDistance: { fontSize: 10, opacity: 0.85, marginTop: 2 },
   teeDetails: { backgroundColor: '#f5f5f5', borderRadius: 10, padding: 12, marginBottom: 16 },
   teeDetailsText: { fontSize: 15, color: '#333', textAlign: 'center', fontWeight: '600' },
+  teeRatingSourceText: { fontSize: 12, color: '#777', textAlign: 'center', marginTop: 2 },
   teeNoDataText: { fontSize: 14, color: '#ff9800', textAlign: 'center' },
   holesRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   holeBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },

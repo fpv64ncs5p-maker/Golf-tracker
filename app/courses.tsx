@@ -3,14 +3,35 @@ import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, Keyboa
 import { router } from 'expo-router';
 import { getCourses, saveCourses, getRounds } from '../services/storage';
 import type { Course, Round } from '../types';
+import { TEE_COLOUR_MAP } from '../constants/theme';
 
-const TEE_COLOURS = [
-  { name: 'Blue', color: '#1565C0', text: '#fff' },
-  { name: 'White', color: '#f5f5f5', text: '#333', border: '#ddd' },
-  { name: 'Yellow', color: '#F9A825', text: '#fff' },
-  { name: 'Red', color: '#C62828', text: '#fff' },
-  { name: 'Orange', color: '#E65100', text: '#fff' },
-];
+// Canonical tee order, longest to shortest. Used to sort whatever tees a course
+// actually has; anything unrecognised is appended alphabetically at the end.
+const TEE_ORDER = ['Black', 'Gold', 'White', 'Yellow', 'Blue', 'Red', 'Orange', 'Green', 'Purple'];
+
+// Offered on every course so a new tee can be added without typing.
+const DEFAULT_TEE_OPTIONS = ['Blue', 'White', 'Yellow', 'Red', 'Orange'];
+
+/**
+ * Which tee rows to show for a course: every tee it actually has, plus the
+ * standard options it doesn't, so nothing a course stores is ever hidden.
+ *
+ * This used to be a fixed five-colour list, which meant Campo Real's Black,
+ * Green and Purple tees were invisible here — their CR/Slope could not be seen
+ * or edited even though rounds could be played off them.
+ */
+function teeRowsFor(course: Course) {
+  const names = [...new Set([...Object.keys(course.tees || {}), ...DEFAULT_TEE_OPTIONS])];
+  names.sort((a, b) => {
+    const ia = TEE_ORDER.indexOf(a);
+    const ib = TEE_ORDER.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  return names.map(name => ({ name, ...(TEE_COLOUR_MAP[name] || { color: '#888', text: '#fff' }) }));
+}
 
 const DEFAULT_HOLES = Array.from({ length: 18 }, (_, i) => ({
   hole: i + 1, par: 4, distance: '', si: '',
@@ -39,6 +60,13 @@ export default function CoursesScreen() {
   const [teePar, setTeePar] = useState('');
   const [teeRating, setTeeRating] = useState('');
   const [teeSlope, setTeeSlope] = useState('');
+  // Official 9-hole ratings (optional). Federations rate each nine separately:
+  // a nine's CR is not half the 18-hole CR and its Slope usually differs.
+  const [teeF9Rating, setTeeF9Rating] = useState('');
+  const [teeF9Slope, setTeeF9Slope] = useState('');
+  const [teeB9Rating, setTeeB9Rating] = useState('');
+  const [teeB9Slope, setTeeB9Slope] = useState('');
+  const [showNineRatings, setShowNineRatings] = useState(false);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadCourses(); loadRounds(); }, []); // run once on mount
@@ -117,10 +145,30 @@ export default function CoursesScreen() {
     setTeePar(existing.par?.toString() || '');
     setTeeRating(existing.rating?.toString() || '');
     setTeeSlope(existing.slope?.toString() || '');
+    setTeeF9Rating(existing.front9?.rating?.toString() || '');
+    setTeeF9Slope(existing.front9?.slope?.toString() || '');
+    setTeeB9Rating(existing.back9?.rating?.toString() || '');
+    setTeeB9Slope(existing.back9?.slope?.toString() || '');
+    setShowNineRatings(!!(existing.front9?.rating || existing.back9?.rating));
+  };
+
+  const resetTeeInputs = () => {
+    setTeePar(''); setTeeRating(''); setTeeSlope('');
+    setTeeF9Rating(''); setTeeF9Slope(''); setTeeB9Rating(''); setTeeB9Slope('');
+    setShowNineRatings(false);
   };
 
   const saveTee = async () => {
     if (!editingTee) return;
+    const par18 = teePar ? parseInt(teePar) : null;
+    const ninePar = par18 != null ? Math.round(par18 / 2) : null;
+    // Only store a nine's rating when both its CR and Slope are filled in —
+    // a half-filled nine would be silently dropped by the handicap maths anyway.
+    const nine = (rating: string, slope: string) =>
+      rating && slope
+        ? { par: ninePar, rating: parseFloat(rating), slope: parseInt(slope) }
+        : undefined;
+
     const updated = courses.map(c => {
       if (c.id !== editingTee.courseId) return c;
       return {
@@ -128,21 +176,23 @@ export default function CoursesScreen() {
         tees: {
           ...c.tees,
           [editingTee.teeName]: {
-            par: teePar ? parseInt(teePar) : null,
+            par: par18,
             rating: teeRating ? parseFloat(teeRating) : null,
             slope: teeSlope ? parseInt(teeSlope) : null,
+            front9: nine(teeF9Rating, teeF9Slope),
+            back9: nine(teeB9Rating, teeB9Slope),
           }
         }
       };
     });
     await updateAndSaveCourses(updated);
     setEditingTee(null);
-    setTeePar(''); setTeeRating(''); setTeeSlope('');
+    resetTeeInputs();
   };
 
   const cancelEdit = () => {
     setEditingTee(null);
-    setTeePar(''); setTeeRating(''); setTeeSlope('');
+    resetTeeInputs();
   };
 
   const startEditHoles = (course: Course) => {
@@ -302,7 +352,7 @@ export default function CoursesScreen() {
                   {/* ── TEES TAB ── */}
                   {tab === 'tees' && (
                     <View>
-                      {TEE_COLOURS.map(tee => {
+                      {teeRowsFor(course).map(tee => {
                         const saved = course.tees[tee.name];
                         const isEditing = editingTee?.courseId === course.id && editingTee?.teeName === tee.name;
                         return (
@@ -329,6 +379,54 @@ export default function CoursesScreen() {
                                       placeholder="125" keyboardType="numeric" style={styles.teeInput} />
                                   </View>
                                 </View>
+
+                                {/* Optional official 9-hole ratings */}
+                                <TouchableOpacity
+                                  style={styles.nineToggle}
+                                  onPress={() => setShowNineRatings(v => !v)}>
+                                  <Text style={styles.nineToggleText}>
+                                    {showNineRatings ? '▾' : '▸'} 9-hole ratings (optional)
+                                  </Text>
+                                </TouchableOpacity>
+                                {showNineRatings && (
+                                  <View style={styles.nineBlock}>
+                                    <Text style={styles.nineHint}>
+                                      Each nine is rated separately — its CR is not half the 18-hole CR,
+                                      and its Slope usually differs. Leave blank to estimate by halving.
+                                    </Text>
+                                    <View style={styles.teeInputRow}>
+                                      <View style={styles.nineLabelCol}>
+                                        <Text style={styles.nineRowLabel}>Front 9</Text>
+                                      </View>
+                                      <View style={styles.teeInputGroup}>
+                                        <Text style={styles.teeInputLabel}>CR</Text>
+                                        <TextInput value={teeF9Rating} onChangeText={setTeeF9Rating}
+                                          placeholder="35.6" keyboardType="decimal-pad" style={styles.teeInput} />
+                                      </View>
+                                      <View style={styles.teeInputGroup}>
+                                        <Text style={styles.teeInputLabel}>Slope</Text>
+                                        <TextInput value={teeF9Slope} onChangeText={setTeeF9Slope}
+                                          placeholder="123" keyboardType="numeric" style={styles.teeInput} />
+                                      </View>
+                                    </View>
+                                    <View style={styles.teeInputRow}>
+                                      <View style={styles.nineLabelCol}>
+                                        <Text style={styles.nineRowLabel}>Back 9</Text>
+                                      </View>
+                                      <View style={styles.teeInputGroup}>
+                                        <Text style={styles.teeInputLabel}>CR</Text>
+                                        <TextInput value={teeB9Rating} onChangeText={setTeeB9Rating}
+                                          placeholder="34.8" keyboardType="decimal-pad" style={styles.teeInput} />
+                                      </View>
+                                      <View style={styles.teeInputGroup}>
+                                        <Text style={styles.teeInputLabel}>Slope</Text>
+                                        <TextInput value={teeB9Slope} onChangeText={setTeeB9Slope}
+                                          placeholder="129" keyboardType="numeric" style={styles.teeInput} />
+                                      </View>
+                                    </View>
+                                  </View>
+                                )}
+
                                 <View style={styles.btnRow}>
                                   <TouchableOpacity style={styles.saveTeeBtn} onPress={saveTee}>
                                     <Text style={styles.saveTeeBtnText}>✅ Save</Text>
@@ -341,7 +439,19 @@ export default function CoursesScreen() {
                             ) : (
                               <TouchableOpacity style={styles.teeInfo} onPress={() => startEditTee(course, tee.name)}>
                                 {saved?.par ? (
-                                  <Text style={styles.teeDetails}>Par {saved.par} · CR {saved.rating} · Slope {saved.slope}</Text>
+                                  <View>
+                                    <Text style={[styles.teeDetails, (!saved.rating || !saved.slope) && styles.teeDetailsIncomplete]}>
+                                      Par {saved.par} · CR {saved.rating ?? '—'} · Slope {saved.slope ?? '—'}
+                                      {(!saved.rating || !saved.slope) ? '  ⚠️ CR/Slope needed for handicap' : ''}
+                                    </Text>
+                                    {(saved.front9?.rating || saved.back9?.rating) && (
+                                      <Text style={styles.teeNineDetails}>
+                                        {saved.front9?.rating ? `F9 ${saved.front9.rating}/${saved.front9.slope}` : 'F9 —'}
+                                        {'  ·  '}
+                                        {saved.back9?.rating ? `B9 ${saved.back9.rating}/${saved.back9.slope}` : 'B9 —'}
+                                      </Text>
+                                    )}
+                                  </View>
                                 ) : (
                                   <Text style={styles.teeEmpty}>Tap to add details</Text>
                                 )}
@@ -577,6 +687,14 @@ const styles = StyleSheet.create({
   teeBadgeText: { fontSize: 13, fontWeight: 'bold' },
   teeInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 10, padding: 10 },
   teeDetails: { fontSize: 14, color: '#444' },
+  teeNineDetails: { fontSize: 12, color: '#777', marginTop: 2 },
+  nineToggle: { paddingVertical: 6 },
+  nineToggleText: { fontSize: 13, color: '#4CAF50', fontWeight: '600' },
+  nineBlock: { marginBottom: 4 },
+  nineHint: { fontSize: 11, color: '#888', marginBottom: 8, lineHeight: 15 },
+  nineLabelCol: { width: 58, justifyContent: 'flex-end', paddingBottom: 10 },
+  nineRowLabel: { fontSize: 12, color: '#666', fontWeight: '600' },
+  teeDetailsIncomplete: { color: '#b26a00' },
   teeEmpty: { fontSize: 14, color: '#bbb', fontStyle: 'italic' },
   editIcon: { fontSize: 14 },
   teeEditForm: { backgroundColor: '#f5f5f5', borderRadius: 10, padding: 12 },

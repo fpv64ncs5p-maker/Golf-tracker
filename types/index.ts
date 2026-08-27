@@ -2,10 +2,25 @@
  * Golf Tracker Type Definitions
  */
 
+/**
+ * Official rating for one nine (holes 1-9 or 10-18) off a given tee.
+ * Federations publish these separately: a nine's CR is NOT half the 18-hole CR,
+ * and its Slope is usually different from the 18-hole Slope.
+ */
+export interface NineRating {
+  par: number | null;
+  rating: number | null;   // 9-hole Course Rating, e.g. 35.6
+  slope: number | null;    // 9-hole Slope, e.g. 123
+}
+
 export interface TeeData {
   par: number | null;
   rating: number | null;
   slope: number | null;
+  /** Official front-nine (holes 1-9) rating, when the course publishes one. */
+  front9?: NineRating;
+  /** Official back-nine (holes 10-18) rating, when the course publishes one. */
+  back9?: NineRating;
 }
 
 export interface HoleDefinition {
@@ -168,6 +183,8 @@ export interface Round {
   courseId?: string;
   tee: string;
   holes: number;
+  /** Which nine was played, for 9-hole rounds on an 18-hole course. */
+  nine?: 'front' | 'back';
   coursePar: number;
   courseRating?: number;
   slopeRating?: number;
