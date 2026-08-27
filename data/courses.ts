@@ -363,6 +363,45 @@ export const QUINTA_DA_BELOURA: Course = {
   ],
 };
 
+export const THE_ONE_HILLS: Course = {
+  id: 'the-one-hills-lisbon',
+  country: 'Portugal',
+  name: 'The ONE Hills Lisbon City Golf',
+  // Formerly Clube de Golfe Paco do Lumiar - renamed; the FPG rates it under the new name.
+  // Official FPG WHS ratings - SENHORAS / women's table.
+  // Source: scoring-pt.datagolf.pt (calculator + scorecard ncourse=064), read 2026-08-27.
+  //
+  // Urban short course: par 58 over 18 holes, and it is the SAME NINE PLAYED TWICE -
+  // holes 1-9 and 10-18 share pars and distances, only the Stroke Index differs.
+  // Front and back nine ratings are therefore exactly half the 18, with identical slope.
+  // Homens for reference: White 58.2/97, Yellow 57.5/96, Red 56.9/94.
+  tees: {
+    White:  { par: 58, rating: 59.3, slope: 105, front9: { par: 29, rating: 29.7, slope: 105 }, back9: { par: 29, rating: 29.7, slope: 105 } },
+    Yellow: { par: 58, rating: 58.4, slope: 103, front9: { par: 29, rating: 29.2, slope: 103 }, back9: { par: 29, rating: 29.2, slope: 103 } },
+    Red:    { par: 58, rating: 57.5, slope: 101, front9: { par: 29, rating: 28.8, slope: 101 }, back9: { par: 29, rating: 28.8, slope: 101 } },
+  },
+  holes: [
+    { hole: 1,  par: 3, distance: 138, distanceByTee: { White: 158, Yellow: 138, Red: 116 }, strokeIndex: 9 },
+    { hole: 2,  par: 3, distance: 115, distanceByTee: { White: 124, Yellow: 115, Red: 106 }, strokeIndex: 17 },
+    { hole: 3,  par: 3, distance: 94, distanceByTee: { White: 112, Yellow: 94, Red: 84 }, strokeIndex: 13 },
+    { hole: 4,  par: 4, distance: 371, distanceByTee: { White: 371, Yellow: 371, Red: 357 }, strokeIndex: 1 },
+    { hole: 5,  par: 3, distance: 81, distanceByTee: { White: 85, Yellow: 81, Red: 77 }, strokeIndex: 11 },
+    { hole: 6,  par: 3, distance: 124, distanceByTee: { White: 140, Yellow: 124, Red: 112 }, strokeIndex: 5 },
+    { hole: 7,  par: 4, distance: 281, distanceByTee: { White: 299, Yellow: 281, Red: 270 }, strokeIndex: 7 },
+    { hole: 8,  par: 3, distance: 121, distanceByTee: { White: 128, Yellow: 121, Red: 105 }, strokeIndex: 15 },
+    { hole: 9,  par: 3, distance: 134, distanceByTee: { White: 144, Yellow: 134, Red: 125 }, strokeIndex: 3 },
+    { hole: 10, par: 3, distance: 138, distanceByTee: { White: 158, Yellow: 138, Red: 116 }, strokeIndex: 10 },
+    { hole: 11, par: 3, distance: 115, distanceByTee: { White: 124, Yellow: 115, Red: 106 }, strokeIndex: 18 },
+    { hole: 12, par: 3, distance: 94, distanceByTee: { White: 112, Yellow: 94, Red: 84 }, strokeIndex: 14 },
+    { hole: 13, par: 4, distance: 371, distanceByTee: { White: 371, Yellow: 371, Red: 357 }, strokeIndex: 2 },
+    { hole: 14, par: 3, distance: 81, distanceByTee: { White: 85, Yellow: 81, Red: 77 }, strokeIndex: 12 },
+    { hole: 15, par: 3, distance: 124, distanceByTee: { White: 140, Yellow: 124, Red: 112 }, strokeIndex: 6 },
+    { hole: 16, par: 4, distance: 281, distanceByTee: { White: 299, Yellow: 281, Red: 270 }, strokeIndex: 8 },
+    { hole: 17, par: 3, distance: 121, distanceByTee: { White: 128, Yellow: 121, Red: 105 }, strokeIndex: 16 },
+    { hole: 18, par: 3, distance: 134, distanceByTee: { White: 144, Yellow: 134, Red: 125 }, strokeIndex: 4 },
+  ],
+};
+
 export const KROMME_RIJN: Course = {
   id: 'kromme-rijn',
   country: 'Netherlands',
@@ -512,6 +551,7 @@ export const ALL_COURSES: Course[] = [
   DE_HAVERLEIJ,
   CAMPO_REAL,
   QUINTA_DA_BELOURA,
+  THE_ONE_HILLS,
   KROMME_RIJN,
   SHORTGOLF_UTRECHT,
   WESTEPARK,

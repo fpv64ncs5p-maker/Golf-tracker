@@ -1,6 +1,18 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-08-27** — **New course: The ONE Hills Lisbon City Golf (formerly Clube de Golfe Paco do Lumiar).** Jo knew it by the old name; the FPG rates it under the new one, so the app uses **The ONE Hills Lisbon City Golf** (id `the-one-hills-lisbon`) — search the old name and you will not find it in the federation data. Urban short course in Lisbon, **par 58 over 18 holes**: 14 par 3s and 4 par 4s. Source: scoring-pt.datagolf.pt calculator + scorecard `ncourse=064`, read 27-08-2026.
+  **It is the same nine played twice** — holes 1-9 and 10-18 share pars and distances; only the Stroke Index differs (odds out, evens in). Modelled as 18 holes anyway, because that is how it is rated. Front and back nine ratings are therefore exactly half the 18 with identical slope. **Senhoras:**
+
+  | Tee | 18 | Front 9 | Back 9 | Length |
+  |---|---|---|---|---|
+  | White | 59,3 / 105 | 29,7 / 105 | 29,7 / 105 | 3.122 m |
+  | Yellow | 58,4 / 103 | 29,2 / 103 | 29,2 / 103 | 2.918 m |
+  | Red | 57,5 / 101 | 28,8 / 101 | 28,8 / 101 | 2.704 m |
+
+  Homens for reference: White 58,2/97 · Yellow 57,5/96 · Red 56,9/94. Verified against the card's subtotals: OUT and IN both 1.561/1.459/1.352 par 29, TOT 3.122/2.918/2.704 par 58 — all match. Stroke Index seeded, so Adjusted Gross Score works from the first round.
+  **Worth knowing when reading the index:** par 58 with slope ~101-105 produces materially lower differentials than Campo Real or Beloura for equivalent golf. That is the WHS working as designed, but a good round here moves the index more than one elsewhere.
+  **Finding a course id on datagolf:** there is no search. `show_card.asp?ncourse=NNN-1&stat=Y&Club=ALL&ack=8428ACK987` was fetched same-origin in a loop over 001-140 from the calculator page (6 workers) and grepped for the club name — took seconds and found `064`. Reuse that trick rather than guessing.
 - **2026-08-27** — **New course: Quinta da Beloura (Sintra, Portugal).** Added `quinta-da-beloura` to `data/courses.ts` from the official FPG data (calculator + scorecard `ncourse=003`), read 27-08-2026. Par 72. **Senhoras** table, all three tees rated:
 
   | Tee | 18 | Front 9 | Back 9 | Length |
