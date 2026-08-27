@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { getCourses, saveCourses, getRounds } from '../services/storage';
 import type { Course, Round } from '../types';
 import { TEE_COLOUR_MAP } from '../constants/theme';
+import { groupCourses, COUNTRY_FLAG } from '../services/courseGroups';
 
 // Canonical tee order, longest to shortest. Used to sort whatever tees a course
 // actually has; anything unrecognised is appended alphabetically at the end.
@@ -36,11 +37,6 @@ function teeRowsFor(course: Course) {
 const DEFAULT_HOLES = Array.from({ length: 18 }, (_, i) => ({
   hole: i + 1, par: 4, distance: '', si: '',
 }));
-
-const COUNTRY_FLAG: Record<string, string> = {
-  Netherlands: '🇳🇱',
-  Portugal: '🇵🇹',
-};
 
 export default function CoursesScreen() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -239,26 +235,9 @@ export default function CoursesScreen() {
     return { count: withDist.length, totalPar };
   };
 
-  // Level 1: country tabs (alphabetical)
-  const countries = [...new Set(courses.map((c: Course) => c.country || 'Other'))].sort() as string[];
-  const activeCountryKey = activeCountry || countries[0] || null;
-  const coursesByCountry = courses.filter((c: Course) => (c.country || 'Other') === activeCountryKey);
-
-  // Level 2: club sub-tabs within selected country (named clubs alphabetical, then 'Other')
-  const clubMap: Record<string, Course[]> = {};
-  for (const c of coursesByCountry) {
-    const key = c.club || 'Other';
-    if (!clubMap[key]) clubMap[key] = [];
-    clubMap[key].push(c);
-  }
-  const clubTabs = Object.keys(clubMap).sort((a, b) => {
-    if (a === 'Other') return 1;
-    if (b === 'Other') return -1;
-    return a.localeCompare(b);
-  });
-  const hasClubTabs = clubTabs.length > 1;
-  const activeClubKey = activeClub || clubTabs[0] || null;
-  const visibleCourses = activeClubKey && clubMap[activeClubKey] ? clubMap[activeClubKey] : coursesByCountry;
+  // Country → club grouping, shared with the round setup screen
+  const { countries, activeCountryKey, clubTabs, hasClubTabs, activeClubKey, visibleCourses } =
+    groupCourses(courses, activeCountry, activeClub);
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>

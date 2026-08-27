@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import { getCourses, saveDraftRound } from '../services/storage';
 import { TEE_COLOUR_MAP } from '../constants/theme';
 import { ratingForPlay } from '../services/rating';
+import { groupCourses, COUNTRY_FLAG } from '../services/courseGroups';
 import { OPENWEATHER_API_KEY } from '../constants/weather';
 import type { Course, DraftRound } from '../types';
 
@@ -32,6 +33,8 @@ export default function RoundSetupScreen() {
   const [holes, setHoles] = useState('18');
   const [nineHalf, setNineHalf] = useState<'front' | 'back'>('front');
   const scrollRef = useRef<ScrollView>(null);
+  const [activeCountry, setActiveCountry] = useState<string | null>(null);
+  const [activeClub, setActiveClub] = useState<string | null>(null);
   const [wind, setWind] = useState('Calm');
   const [sky, setSky] = useState('Sunny');
   const [ground, setGround] = useState('Normal');
@@ -85,6 +88,10 @@ export default function RoundSetupScreen() {
     showFrontBackToggle ? nineHalf : undefined,
     courseHoleTotal > 0 && courseHoleTotal <= 9,
   );
+
+  // Same country → club grouping as Manage Courses, so a long course list stays navigable
+  const { countries, activeCountryKey, clubTabs, hasClubTabs, activeClubKey, visibleCourses } =
+    groupCourses(courses, activeCountry, activeClub);
 
   const canStart = selectedCourse && selectedTee;
 
@@ -198,27 +205,59 @@ export default function RoundSetupScreen() {
             </View>
           </View>
         ) : (
-          courses.map(course => (
-            <TouchableOpacity key={course.id}
-              style={styles.courseCard}
-              onPress={() => {
-                setSelectedCourse(course);
-                setSelectedTee(null);
-                // Auto-detect holes: 9-hole courses default to 9, 18-hole to 18
-                const holeCount = (course.holes || []).length;
-                setHoles(holeCount > 0 && holeCount <= 9 ? '9' : '18');
-                // Selecting a course collapses the (long) list to a single card, which
-                // pulls everything above the viewport out from under you — picking a
-                // course from far down the list used to leave you staring at a greyed-out
-                // "Start Round" with the tee picker scrolled off the top. Go back to the top.
-                scrollRef.current?.scrollTo({ y: 0, animated: true });
-              }}>
-              <Text style={styles.courseName}>{course.name}</Text>
-              <Text style={styles.courseDetail}>
-                {Object.keys(course.tees || {}).length} tee{Object.keys(course.tees || {}).length !== 1 ? 's' : ''} saved
-              </Text>
-            </TouchableOpacity>
-          ))
+          <>
+            {/* Country tabs */}
+            {countries.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                style={styles.countryTabBar} contentContainerStyle={styles.countryTabBarContent}>
+                {countries.map(country => (
+                  <TouchableOpacity key={country}
+                    style={[styles.countryTab, activeCountryKey === country && styles.countryTabActive]}
+                    onPress={() => { setActiveCountry(country); setActiveClub(null); }}>
+                    <Text style={[styles.countryTabText, activeCountryKey === country && styles.countryTabTextActive]}>
+                      {COUNTRY_FLAG[country] || '🌍'} {country}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Club sub-tabs (only when the country has more than one club) */}
+            {hasClubTabs && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                style={styles.clubTabBar} contentContainerStyle={styles.countryTabBarContent}>
+                {clubTabs.map(club => (
+                  <TouchableOpacity key={club}
+                    style={[styles.clubTab, activeClubKey === club && styles.clubTabActive]}
+                    onPress={() => setActiveClub(club)}>
+                    <Text style={[styles.clubTabText, activeClubKey === club && styles.clubTabTextActive]}>{club}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {visibleCourses.map(course => (
+              <TouchableOpacity key={course.id}
+                style={styles.courseCard}
+                onPress={() => {
+                  setSelectedCourse(course);
+                  setSelectedTee(null);
+                  // Auto-detect holes: 9-hole courses default to 9, 18-hole to 18
+                  const holeCount = (course.holes || []).length;
+                  setHoles(holeCount > 0 && holeCount <= 9 ? '9' : '18');
+                  // Selecting a course collapses the (long) list to a single card, which
+                  // pulls everything above the viewport out from under you — picking a
+                  // course from far down the list used to leave you staring at a greyed-out
+                  // "Start Round" with the tee picker scrolled off the top. Go back to the top.
+                  scrollRef.current?.scrollTo({ y: 0, animated: true });
+                }}>
+                <Text style={styles.courseName}>{course.name}</Text>
+                <Text style={styles.courseDetail}>
+                  {Object.keys(course.tees || {}).length} tee{Object.keys(course.tees || {}).length !== 1 ? 's' : ''} saved
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </>
         )}
 
         {/* Tee selection */}
@@ -363,6 +402,17 @@ const styles = StyleSheet.create({
   teeDetails: { backgroundColor: '#f5f5f5', borderRadius: 10, padding: 12, marginBottom: 16 },
   teeDetailsText: { fontSize: 15, color: '#333', textAlign: 'center', fontWeight: '600' },
   teeRatingSourceText: { fontSize: 12, color: '#777', textAlign: 'center', marginTop: 2 },
+  countryTabBar: { marginBottom: 10, marginHorizontal: -4 },
+  countryTabBarContent: { paddingHorizontal: 4, gap: 8, flexDirection: 'row' },
+  countryTab: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20, borderWidth: 1.5, borderColor: '#ddd', backgroundColor: '#f9f9f9' },
+  countryTabActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  countryTabText: { fontSize: 14, fontWeight: '600', color: '#555' },
+  countryTabTextActive: { color: '#fff' },
+  clubTabBar: { marginBottom: 14, marginHorizontal: -4 },
+  clubTab: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: '#c8d8f0', backgroundColor: '#eef4fc' },
+  clubTabActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  clubTabText: { fontSize: 13, fontWeight: '600', color: '#1565C0' },
+  clubTabTextActive: { color: '#fff' },
   teeNoDataText: { fontSize: 14, color: '#ff9800', textAlign: 'center' },
   holesRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   holeBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
