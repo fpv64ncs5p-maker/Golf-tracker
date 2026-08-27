@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
@@ -31,6 +31,7 @@ export default function RoundSetupScreen() {
   const [selectedTee, setSelectedTee] = useState<string | null>(null);
   const [holes, setHoles] = useState('18');
   const [nineHalf, setNineHalf] = useState<'front' | 'back'>('front');
+  const scrollRef = useRef<ScrollView>(null);
   const [wind, setWind] = useState('Calm');
   const [sky, setSky] = useState('Sunny');
   const [ground, setGround] = useState('Normal');
@@ -162,7 +163,7 @@ export default function RoundSetupScreen() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} style={styles.container} keyboardShouldPersistTaps="handled">
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
@@ -206,6 +207,11 @@ export default function RoundSetupScreen() {
                 // Auto-detect holes: 9-hole courses default to 9, 18-hole to 18
                 const holeCount = (course.holes || []).length;
                 setHoles(holeCount > 0 && holeCount <= 9 ? '9' : '18');
+                // Selecting a course collapses the (long) list to a single card, which
+                // pulls everything above the viewport out from under you — picking a
+                // course from far down the list used to leave you staring at a greyed-out
+                // "Start Round" with the tee picker scrolled off the top. Go back to the top.
+                scrollRef.current?.scrollTo({ y: 0, animated: true });
               }}>
               <Text style={styles.courseName}>{course.name}</Text>
               <Text style={styles.courseDetail}>
