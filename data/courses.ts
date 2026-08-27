@@ -328,6 +328,41 @@ export const CAMPO_REAL: Course = {
   ],
 };
 
+export const QUINTA_DA_BELOURA: Course = {
+  id: 'quinta-da-beloura',
+  country: 'Portugal',
+  name: 'Quinta da Beloura',
+  // Official FPG WHS ratings - SENHORAS / women's table.
+  // Source: scoring-pt.datagolf.pt (calculator + scorecard ncourse=003), read 2026-08-27.
+  // The course has three tees; all three are rated for women.
+  // For reference, the Homens table is White 70.8/127, Yellow 69.1/124, Red 66.6/119.
+  tees: {
+    White:  { par: 72, rating: 76.9, slope: 135, front9: { par: 36, rating: 39.1, slope: 135 }, back9: { par: 36, rating: 37.8, slope: 135 } },
+    Yellow: { par: 72, rating: 74.8, slope: 131, front9: { par: 36, rating: 37.9, slope: 131 }, back9: { par: 36, rating: 36.9, slope: 131 } },
+    Red:    { par: 72, rating: 71.7, slope: 124, front9: { par: 36, rating: 36.5, slope: 124 }, back9: { par: 36, rating: 35.2, slope: 124 } },
+  },
+  holes: [
+    { hole: 1,  par: 5, distance: 438, distanceByTee: { White: 465, Yellow: 438, Red: 396 }, strokeIndex: 3 },
+    { hole: 2,  par: 4, distance: 276, distanceByTee: { White: 302, Yellow: 276, Red: 250 }, strokeIndex: 13 },
+    { hole: 3,  par: 3, distance: 142, distanceByTee: { White: 157, Yellow: 142, Red: 120 }, strokeIndex: 15 },
+    { hole: 4,  par: 4, distance: 349, distanceByTee: { White: 361, Yellow: 349, Red: 302 }, strokeIndex: 11 },
+    { hole: 5,  par: 3, distance: 126, distanceByTee: { White: 144, Yellow: 126, Red: 105 }, strokeIndex: 17 },
+    { hole: 6,  par: 5, distance: 421, distanceByTee: { White: 446, Yellow: 421, Red: 398 }, strokeIndex: 9 },
+    { hole: 7,  par: 4, distance: 364, distanceByTee: { White: 388, Yellow: 364, Red: 337 }, strokeIndex: 1 },
+    { hole: 8,  par: 4, distance: 313, distanceByTee: { White: 329, Yellow: 313, Red: 302 }, strokeIndex: 5 },
+    { hole: 9,  par: 4, distance: 358, distanceByTee: { White: 382, Yellow: 358, Red: 339 }, strokeIndex: 7 },
+    { hole: 10, par: 5, distance: 452, distanceByTee: { White: 466, Yellow: 452, Red: 401 }, strokeIndex: 4 },
+    { hole: 11, par: 4, distance: 306, distanceByTee: { White: 317, Yellow: 306, Red: 281 }, strokeIndex: 12 },
+    { hole: 12, par: 3, distance: 113, distanceByTee: { White: 123, Yellow: 113, Red: 88 }, strokeIndex: 18 },
+    { hole: 13, par: 4, distance: 298, distanceByTee: { White: 315, Yellow: 298, Red: 277 }, strokeIndex: 10 },
+    { hole: 14, par: 4, distance: 240, distanceByTee: { White: 254, Yellow: 240, Red: 217 }, strokeIndex: 16 },
+    { hole: 15, par: 4, distance: 326, distanceByTee: { White: 347, Yellow: 326, Red: 307 }, strokeIndex: 8 },
+    { hole: 16, par: 5, distance: 438, distanceByTee: { White: 457, Yellow: 438, Red: 370 }, strokeIndex: 2 },
+    { hole: 17, par: 3, distance: 138, distanceByTee: { White: 159, Yellow: 138, Red: 128 }, strokeIndex: 14 },
+    { hole: 18, par: 4, distance: 297, distanceByTee: { White: 315, Yellow: 297, Red: 258 }, strokeIndex: 6 },
+  ],
+};
+
 export const KROMME_RIJN: Course = {
   id: 'kromme-rijn',
   country: 'Netherlands',
@@ -476,6 +511,7 @@ export const ALL_COURSES: Course[] = [
   PURMER_GELE_LUS,
   DE_HAVERLEIJ,
   CAMPO_REAL,
+  QUINTA_DA_BELOURA,
   KROMME_RIJN,
   SHORTGOLF_UTRECHT,
   WESTEPARK,

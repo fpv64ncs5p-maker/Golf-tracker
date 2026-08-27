@@ -1,6 +1,16 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-08-27** — **New course: Quinta da Beloura (Sintra, Portugal).** Added `quinta-da-beloura` to `data/courses.ts` from the official FPG data (calculator + scorecard `ncourse=003`), read 27-08-2026. Par 72. **Senhoras** table, all three tees rated:
+
+  | Tee | 18 | Front 9 | Back 9 | Length |
+  |---|---|---|---|---|
+  | White (Brancas) | 76,9 / 135 | 39,1 / 135 | 37,8 / 135 | 5.727 m |
+  | Yellow (Amarelas) | 74,8 / 131 | 37,9 / 131 | 36,9 / 131 | 5.395 m |
+  | Red (Vermelhas) | 71,7 / 124 | 36,5 / 124 | 35,2 / 124 | 4.876 m |
+
+  Unlike Campo Real, Beloura's published **Slope is the same for 18, front and back** off each tee — only the Course Rating splits. That is what the federation publishes, not a data-entry slip. Homens for reference: White 70,8/127 · Yellow 69,1/124 · Red 66,6/119.
+  Full per-hole par, three-tee distances and **Stroke Index** (F9 3,13,15,11,17,9,1,5,7 / B9 4,12,18,10,16,8,2,14,6) are seeded, so Adjusted Gross Score works there from the first round. Verified against the card's own subtotals: OUT 2.974/2.787/2.549 par 36, IN 2.753/2.608/2.327 par 36, TOT 5.727/5.395/4.876 par 72 — all match. Default `distance` per hole is the Yellow value, matching the Campo Real convention. Portugal now has two courses, so the round screen's 🇵🇹 tab lists both.
 - **2026-08-27** — **"Only the Dutch courses can be used to log a round" — scroll position, not the courses (Jo reported it twice; I mis-diagnosed it twice).** `app/round.tsx` lists all 18 courses in one flat, unsorted list ~1,500px tall. Selecting a course **collapses that list to a single card**, so everything below jumps up by more than a screen — but the ScrollView keeps its scroll offset. Pick a course from the top of the list (all the Dutch ones — Campo Real is 11th) and nothing moves, so it works. Pick one further down and the collapse leaves you looking at Weather and a greyed-out **Start Round**, with the tee picker scrolled off the top of the screen. It reads as "this course doesn't work". Reproduced on the live site: real scroll to Campo Real → real click → landed on the disabled Start Round button with tees invisible above.
   Fix: `scrollRef` on the outer ScrollView, `scrollTo({ y: 0, animated: true })` in the course card's `onPress`. `app/round-import.tsx` is not affected — its course list lives in a bounded `maxHeight: 200` inner ScrollView, so collapsing it barely moves the page.
   **Diagnostic lesson:** two earlier readings of this report were wrong — first "the round screen filters courses" (it doesn't), then "the course editor hides tees" (a real bug, but a different one). What settled it was measuring the DOM: the course cards ran to y=1485 inside a 599px-tall scroller, and clicking one mid-list left the viewport stranded. **Check scroll offset and layout height before concluding a control is broken.** Also: a synthetic `element.click()` on React Native Web does not reliably fire `TouchableOpacity` — use a real mouse click at coordinates when verifying in Chrome.
