@@ -52,6 +52,17 @@ export default function RoundDetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round]); // intentionally only re-runs when the round loads
 
+  // Practice <-> qualifying. Saved immediately: it is one field, not part of the hole edit flow.
+  const toggleQualifying = async () => {
+    if (!round) return;
+    const all = await getRounds();
+    const idx = parseInt(Array.isArray(index) ? index[0] : (index as string));
+    const originalIndex = all.length - 1 - idx;
+    all[originalIndex] = { ...all[originalIndex], qualifying: !round.qualifying };
+    await saveRounds(all);
+    setRound(all[originalIndex]);
+  };
+
   const startEdit = () => {
     if (!round) return;
     setEditedHoles(JSON.parse(JSON.stringify(round.holeData || [])));
@@ -148,6 +159,17 @@ export default function RoundDetailScreen() {
           🌤 {round.weather.sky}{'  ·  '}💨 {round.weather.wind}{'  ·  '}⛳ {round.weather.ground}
         </Text>
       )}
+
+      {/* Qualifying / practice */}
+      <TouchableOpacity
+        onPress={toggleQualifying}
+        style={[styles.qualBtn, round.qualifying && styles.qualBtnOn]}>
+        <Text style={[styles.qualText, round.qualifying && styles.qualTextOn]}>
+          {round.qualifying
+            ? '✅  Qualifying round — counts towards your official index'
+            : '🏌️  Practice round — tap if you registered it with the federation'}
+        </Text>
+      </TouchableOpacity>
 
       {/* Score card */}
       <View style={styles.scoreCard}>
@@ -356,7 +378,11 @@ const styles = StyleSheet.create({
 
   courseName: { fontSize: 24, fontWeight: 'bold', color: '#222', marginBottom: 4 },
   meta: { fontSize: 14, color: '#666', marginBottom: 2 },
-  weather: { fontSize: 13, color: '#999', marginBottom: 20 },
+  weather: { fontSize: 13, color: '#999', marginBottom: 12 },
+  qualBtn: { borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fafafa', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 20 },
+  qualBtnOn: { borderColor: '#4CAF50', backgroundColor: '#e8f5e9' },
+  qualText: { fontSize: 13, color: '#666', textAlign: 'center' },
+  qualTextOn: { color: '#2e7d32', fontWeight: '600' },
 
   scoreCard: { backgroundColor: '#4CAF50', borderRadius: 16, padding: 20, alignItems: 'center', marginBottom: 20 },
   scoreLabel: { color: '#fff', fontSize: 14, opacity: 0.8 },

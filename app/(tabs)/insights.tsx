@@ -142,9 +142,13 @@ export default function InsightsScreen() {
   };
 
   // ── Handicap calculation (WHS formula) ─────────────────────
-  const calcHandicap = () => {
+  // qualifyingOnly narrows the record to the rounds Jo registered with the federation.
+  // The all-rounds figure includes practice and is hers alone; only the qualifying one
+  // is the same kind of number as the official index.
+  const calcHandicap = (qualifyingOnly = false) => {
+    const source = qualifyingOnly ? rounds.filter((r: Round) => r.qualifying) : rounds;
     // Enrich rounds with CR/Slope from course data if missing
-    const enriched = rounds.map(enrichRound);
+    const enriched = source.map(enrichRound);
     // Filter rounds that have all needed data (explicitly exclude null/undefined scoreVsPar)
     const validRounds = enriched.filter((r: Round) =>
       r.courseRating && r.slopeRating && r.coursePar &&
@@ -434,6 +438,8 @@ export default function InsightsScreen() {
 
   const stats = calcPracticeStats();
   const handicap = calcHandicap();
+  const qualifyingHandicap = calcHandicap(true);
+  const qualifyingCount = rounds.filter((r: Round) => r.qualifying).length;
   const clubStats = calcClubStats();
   const clubTips = getClubTrainingTip(clubStats);
   const yardageGaps = calcYardageGaps(clubStats);
@@ -465,12 +471,37 @@ export default function InsightsScreen() {
 
       {/* ── Handicap card ── */}
       <View style={[styles.card, styles.handicapCard]}>
-        <Text style={styles.heading}>🏅 Training Handicap Index</Text>
+        <Text style={styles.heading}>🏅 Handicap Index</Text>
         {handicap ? (
           <>
-            <Text style={styles.handicapValue}>{handicap.handicap}</Text>
+            <View style={styles.handicapRow}>
+              <View style={styles.handicapCol}>
+                <Text style={styles.handicapColLabel}>ALL ROUNDS</Text>
+                <Text style={styles.handicapValue}>{handicap.handicap}</Text>
+                <Text style={styles.handicapColSub}>
+                  best {handicap.roundsUsed} of {handicap.roundsTotal}
+                </Text>
+              </View>
+              <View style={styles.handicapCol}>
+                <Text style={styles.handicapColLabel}>QUALIFYING</Text>
+                {qualifyingHandicap ? (
+                  <>
+                    <Text style={styles.handicapValue}>{qualifyingHandicap.handicap}</Text>
+                    <Text style={styles.handicapColSub}>
+                      best {qualifyingHandicap.roundsUsed} of {qualifyingHandicap.roundsTotal}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.handicapValueMuted}>—</Text>
+                    <Text style={styles.handicapColSub}>{qualifyingCount}/3 rounds marked</Text>
+                  </>
+                )}
+              </View>
+            </View>
             <Text style={styles.handicapSub}>
-              Based on best {handicap.roundsUsed} of {handicap.roundsTotal} rounds · WHS formula
+              Both are WHS estimates. Only the qualifying column is the same kind of number
+              as your federation index — mark a round on its detail screen.
             </Text>
             {handicap.skippedCount > 0 && (
               <TouchableOpacity onPress={() => router.push('/courses')}>
@@ -649,7 +680,12 @@ const styles = StyleSheet.create({
   handicapCard: { backgroundColor: '#e8f5e9', borderWidth: 1, borderColor: '#4CAF50' },
   heading: { fontSize: 16, fontWeight: 'bold', marginBottom: 8, color: '#333' },
   highlight: { fontSize: 28, fontWeight: 'bold', color: '#4CAF50' },
-  handicapValue: { fontSize: 52, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center', marginVertical: 8 },
+  handicapValue: { fontSize: 44, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center', marginVertical: 6 },
+  handicapValueMuted: { fontSize: 44, fontWeight: 'bold', color: '#bdbdbd', textAlign: 'center', marginVertical: 6 },
+  handicapRow: { flexDirection: 'row', marginTop: 4, marginBottom: 6 },
+  handicapCol: { flex: 1, alignItems: 'center' },
+  handicapColLabel: { fontSize: 11, fontWeight: '600', color: '#2e7d32', letterSpacing: 0.6 },
+  handicapColSub: { fontSize: 11, color: '#666', marginTop: 2 },
   handicapSub: { fontSize: 13, color: '#555', textAlign: 'center' },
   handicapWarn: { fontSize: 12, color: '#b26a00', textAlign: 'center', marginTop: 8, lineHeight: 17 },
   sub: { fontSize: 14, color: '#666', marginTop: 4 },

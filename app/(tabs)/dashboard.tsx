@@ -401,6 +401,7 @@ export default function DashboardScreen() {
                     <View style={styles.cardHeader}>
                       <Text style={styles.cardType}>{item.courseName ?? 'Round'}</Text>
                       <View style={styles.cardDateRow}>
+                        {item.qualifying && <Text style={styles.qualifyingTag}>✅ qualifying</Text>}
                         {item.imported && <Text style={styles.importedTag}>📥 imported</Text>}
                         <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
                       </View>
@@ -582,6 +583,7 @@ const styles = StyleSheet.create({
   cardType: { fontSize: 17, fontWeight: 'bold', color: '#222', flex: 1 },
   cardDateRow: { alignItems: 'flex-end', gap: 2 },
   importedTag: { fontSize: 10, color: '#1565C0', fontWeight: '600', backgroundColor: '#e3f2fd', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  qualifyingTag: { fontSize: 10, color: '#2e7d32', fontWeight: '600', backgroundColor: '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   cardDate: { fontSize: 13, color: '#999' },
   cardDetail: { fontSize: 13, color: '#555', marginTop: 2 },
   cardDrills: { fontSize: 12, color: '#888', marginTop: 4, fontStyle: 'italic' },

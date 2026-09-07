@@ -192,6 +192,12 @@ export interface Round {
   date: string;
   notes: string;
   imported: boolean;
+  /**
+   * True when this round was registered with the federation (NGF) as a qualifying round.
+   * Every round counts towards the app's all-rounds training index; only these are
+   * comparable with the official index, which is computed from a smaller, chosen set.
+   */
+  qualifying?: boolean;
   holeData: HoleData[];
   stats: RoundStats;
   courseHoles?: HoleDefinition[];

@@ -131,6 +131,7 @@ export default function RoundSetupScreen() {
       date: new Date().toISOString(),
       notes: '',
       imported: false,
+      qualifying: false, // practice by default; marked on the round detail screen once registered
       holeData: [],
       stats: {
         totalStrokes: 0,
