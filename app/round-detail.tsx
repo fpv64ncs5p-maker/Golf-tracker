@@ -80,7 +80,11 @@ export default function RoundDetailScreen() {
     const girCount = holes.filter(h => h.gir).length;
     const par3Holes = holes.filter(h => h.par === 3);
     const coursePar = rounds[originalIndex].coursePar;
-    const scoreVsPar = coursePar ? totalStrokes - coursePar : null;
+    // Match round-complete: score against the par of the holes actually recorded.
+    const parPlayed = holes.reduce((sum, h) => sum + (h.par ?? 0), 0);
+    const scoreVsPar = parPlayed > 0
+      ? totalStrokes - parPlayed
+      : (coursePar ? totalStrokes - coursePar : null);
 
     const newStats: RoundStats = {
       totalStrokes, totalPutts,

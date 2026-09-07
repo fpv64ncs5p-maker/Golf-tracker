@@ -180,9 +180,20 @@ export default function RoundHoleScreen() {
     round.holeData = [...existing, holeData].sort((a, b) => a.hole - b.hole);
     await saveDraftRound(round);
 
-    const idx = holeNumbers.indexOf(hole);
-    const next = idx >= 0 ? holeNumbers[idx + 1] : hole + 1;
-    if (next === undefined || (idx < 0 && hole >= total)) {
+    // Advance to the next hole with no score yet, wrapping past the end of the list.
+    // A round started mid-nine (e.g. at hole 12 of 10-18) therefore comes back round to
+    // 10 and 11 instead of finishing at 18 with those holes never played.
+    const order = holeNumbers.length > 0
+      ? holeNumbers
+      : Array.from({ length: total }, (_, i) => i + 1);
+    const played = new Set((round.holeData || []).map(h => h.hole));
+    const start = order.indexOf(hole);
+    const search = start >= 0
+      ? [...order.slice(start + 1), ...order.slice(0, start)]
+      : order;
+    const next = search.find(h => !played.has(h));
+
+    if (next === undefined) {
       router.push('/round-complete');
     } else {
       router.replace({ pathname: '/round-hole', params: { holeNumber: next, totalHoles: total } });

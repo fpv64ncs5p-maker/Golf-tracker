@@ -27,7 +27,12 @@ export default function RoundCompleteScreen() {
     const girCount = holes.filter(h => h.gir).length;
     const par3Holes = holes.filter(h => h.par === 3);
     const par3Gir = par3Holes.filter(h => h.gir).length;
-    const scoreVsPar = round.coursePar ? totalStrokes - round.coursePar : null;
+    // Par of the holes actually recorded, not the whole nine/eighteen. A partial round
+    // otherwise flatters itself: 7 holes of a par-36 nine in 37 shots read as +1, not +9.
+    const parPlayed = holes.reduce((sum, h) => sum + (h.par ?? 0), 0);
+    const scoreVsPar = parPlayed > 0
+      ? totalStrokes - parPlayed
+      : (round.coursePar ? totalStrokes - round.coursePar : null);
 
     return {
       totalStrokes,

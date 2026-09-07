@@ -223,7 +223,11 @@ export default function InsightsScreen() {
     const baseDifferential = (r: Round, provIndex?: number) => {
       const { effectiveCR, effectiveSlope } = effective(r);
       const ags = provIndex != null ? adjustedGross(r, provIndex) : null;
-      const gross = ags != null ? ags : r.coursePar + (r.stats?.scoreVsPar ?? 0);
+      // Use the recorded gross directly. Rebuilding it as coursePar + scoreVsPar broke
+      // once scoreVsPar started measuring the holes played rather than the full nine.
+      const gross = ags != null
+        ? ags
+        : (r.stats?.totalStrokes ?? r.coursePar + (r.stats?.scoreVsPar ?? 0));
       return (gross - effectiveCR) * 113 / effectiveSlope;
     };
 
