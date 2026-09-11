@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { getSessions, saveSessions, getRounds, saveRounds, getRangeDrills, saveRangeDrills, consumeReadError } from '../../services/storage';
 import LoadErrorBanner from '../../components/LoadErrorBanner';
+import { analyzeShortGame, trendArrow, trendColour } from '../../services/shortGame';
 import type { PracticeSession, Round, Drill, ProximityDrill, RangeDrill } from '../../types';
 import { summarizePuttingCourse, summarizeChippingCourse, fmtPuttingVsPar, drillPuttsPerHole, round1 } from '../../constants/scoring';
 import { router } from 'expo-router';
@@ -219,6 +220,11 @@ export default function DashboardScreen() {
   const successRates = calcSuccessRates();
   const practiceRec = getPracticeRec(successRates);
   const roundRec = getRoundRec();
+  const shortGame = analyzeShortGame(sessions);
+  // Headline focus: the weaker of the two course-drill spots (full breakdown lives in Insights)
+  const sgFocus = [shortGame.chippingFocus, shortGame.puttingFocus]
+    .filter(Boolean)
+    .sort((a, b) => b!.failPct - a!.failPct)[0] ?? null;
 
   return (
     <View style={styles.container}>
@@ -273,6 +279,51 @@ export default function DashboardScreen() {
               Putting: {ps.typeCount.Putting}  ·  Chipping: {ps.typeCount.Chipping}  ·  Pitching: {ps.typeCount.Pitching}  ·  Long Game: {ps.typeCount['Long Game']}
             </Text>
           </View>
+
+          {/* Short game on course — headline from the Putting / Chipping Course drills */}
+          {(shortGame.putting || shortGame.chipping) && (
+            <TouchableOpacity style={styles.sgBox} onPress={() => router.push('/insights' as any)} activeOpacity={0.8}>
+              <Text style={styles.insightsTitle}>⛳ Short game on course</Text>
+              <View style={styles.sgRow}>
+                {shortGame.putting && (
+                  <View style={styles.sgCol}>
+                    <Text style={styles.sgLabel}>PUTTING</Text>
+                    <Text style={styles.sgValue}>
+                      {shortGame.putting.overall.avgPutts}<Text style={styles.sgUnit}> putts/hole</Text>
+                      {shortGame.putting.trend && (
+                        <Text style={{ color: trendColour(shortGame.putting.trend.direction), fontSize: 13 }}> {trendArrow(shortGame.putting.trend.direction)}</Text>
+                      )}
+                    </Text>
+                    <Text style={styles.sgSub}>3-putt {shortGame.putting.overall.threePuttPct}% · {shortGame.putting.overall.holes} holes</Text>
+                  </View>
+                )}
+                {shortGame.chipping && (
+                  <View style={styles.sgCol}>
+                    <Text style={styles.sgLabel}>CHIPPING</Text>
+                    <Text style={styles.sgValue}>
+                      {shortGame.chipping.overall.upDownPct}%<Text style={styles.sgUnit}> up & down</Text>
+                      {shortGame.chipping.trend && (
+                        <Text style={{ color: trendColour(shortGame.chipping.trend.direction), fontSize: 13 }}> {trendArrow(shortGame.chipping.trend.direction)}</Text>
+                      )}
+                    </Text>
+                    <Text style={styles.sgSub}>
+                      {(() => {
+                        const sand = shortGame.chipping.byLie.find(l => l.lie === 'Bunker')!.stats;
+                        return sand.holes > 0 ? `sand ${sand.upDowns}/${sand.holes} · ` : '';
+                      })()}
+                      {shortGame.chipping.overall.holes} holes
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {sgFocus && (
+                <View style={styles.recBox}>
+                  <Text style={styles.recText}>🎯 Work on: {sgFocus.label} — {sgFocus.detail}</Text>
+                </View>
+              )}
+              <Text style={styles.sgMore}>Full breakdown in Insights ›</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Insights */}
           {successRates.length > 0 && (
@@ -627,6 +678,14 @@ const styles = StyleSheet.create({
   insightBarFill: { height: 8, backgroundColor: '#4CAF50', borderRadius: 4 },
   insightPct: { fontSize: 12, fontWeight: '700', color: '#4CAF50', width: 34, textAlign: 'right' },
   recBox: { backgroundColor: '#e8f5e9', borderRadius: 8, padding: 10, marginTop: 8 },
+  sgBox: { backgroundColor: '#f1f8e9', borderRadius: 12, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#aed581' },
+  sgRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+  sgCol: { flex: 1, minWidth: 140 },
+  sgLabel: { fontSize: 10, fontWeight: '700', color: '#558b2f', letterSpacing: 0.8 },
+  sgValue: { fontSize: 22, fontWeight: 'bold', color: '#33691e' },
+  sgUnit: { fontSize: 12, fontWeight: '400', color: '#555' },
+  sgSub: { fontSize: 12, color: '#666', marginTop: 2 },
+  sgMore: { fontSize: 12, color: '#558b2f', fontWeight: '600', textAlign: 'right', marginTop: 8 },
   recText: { fontSize: 13, color: '#2e7d32', fontWeight: '600' },
   roundRecBox: { backgroundColor: '#e3f2fd', borderRadius: 8, padding: 10, marginTop: 6 },
   roundRecText: { fontSize: 13, color: '#1565C0', fontWeight: '600' },

@@ -6,6 +6,10 @@ import { getSessions, getRounds, getCourses, getClubDistances, consumeReadError 
 import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Course, ClubDistance } from '../../types';
 import { ratingForPlay } from '../../services/rating';
+import {
+  analyzeShortGame, trendArrow, trendColour, SPOT_MIN_HOLES, SHORT_GAME_WINDOW,
+  type ShortGameAnalysis, type FocusSpot,
+} from '../../services/shortGame';
 
 // Club order for display (tee to green)
 const CLUB_ORDER = ['Driver','3W','5W','4H','5H','3i','4i','5i','6i','7i','8i','9i','PW','GW','SW','LW','Putter'];
@@ -27,6 +31,144 @@ const WHS_ADJUSTMENT: Record<number, number> = {
   4: -1.0,
   6: -1.0,
 };
+
+// ── Short game on course ──────────────────────────────────────────────────────
+
+const upDownColour = (p: number) => (p >= 60 ? '#4CAF50' : p >= 40 ? '#FF9800' : '#e53935');
+const threePuttColour = (p: number) => (p <= 15 ? '#4CAF50' : p <= 30 ? '#FF9800' : '#e53935');
+
+// One labelled bar row; groups under SPOT_MIN_HOLES are greyed as "few holes".
+function SgRow({ label, holes, value, barPct, colour, right }: {
+  label: string; holes: number; value: string; barPct: number; colour: string; right: string;
+}) {
+  const few = holes < SPOT_MIN_HOLES;
+  return (
+    <View style={[sgStyles.row, few && { opacity: 0.55 }]}>
+      <Text style={sgStyles.rowLabel}>{label}</Text>
+      <View style={sgStyles.barBg}>
+        <View style={[sgStyles.barFill, { width: `${Math.max(0, Math.min(100, barPct))}%` as any, backgroundColor: colour }]} />
+      </View>
+      <Text style={sgStyles.rowValue}>{value}</Text>
+      <Text style={sgStyles.rowRight}>{right}</Text>
+    </View>
+  );
+}
+
+function ShortGameCard({ sg }: { sg: ShortGameAnalysis }) {
+  const { putting, chipping } = sg;
+  return (
+    <View style={[styles.card, sgStyles.card]}>
+      <Text style={styles.heading}>⛳ Short Game on Course</Text>
+      <Text style={sgStyles.sub}>
+        From your Putting & Chipping Course drills · up to your last {SHORT_GAME_WINDOW} holes of each, ▲▼ vs the {SHORT_GAME_WINDOW} before · faded rows have fewer than {SPOT_MIN_HOLES} holes
+      </Text>
+
+      {putting && (
+        <View style={sgStyles.block}>
+          <Text style={sgStyles.blockTitle}>PUTTING · {putting.overall.holes} holes</Text>
+          <View style={sgStyles.headline}>
+            <Text style={sgStyles.big}>{putting.overall.avgPutts}</Text>
+            <Text style={sgStyles.bigUnit}>putts / hole</Text>
+            {putting.trend && (
+              <Text style={[sgStyles.trend, { color: trendColour(putting.trend.direction) }]}>
+                {trendArrow(putting.trend.direction)} was {putting.trend.previous}
+              </Text>
+            )}
+          </View>
+          <Text style={sgStyles.line}>1-putt {putting.overall.onePuttPct}% · 3-putt {putting.overall.threePuttPct}%</Text>
+          <Text style={sgStyles.tableHead}>By first-putt distance (from the edge) — 3-putt %</Text>
+          {putting.bands.filter(b => b.stats.holes > 0).map(b => (
+            <SgRow
+              key={b.band.label}
+              label={b.band.label}
+              holes={b.stats.holes}
+              value={`${b.stats.threePuttPct}%`}
+              barPct={b.stats.threePuttPct}
+              colour={threePuttColour(b.stats.threePuttPct)}
+              right={`avg ${b.stats.avgPutts} · ${b.stats.holes}h`}
+            />
+          ))}
+          {putting.noDistance > 0 && <Text style={sgStyles.note}>{putting.noDistance} hole{putting.noDistance === 1 ? '' : 's'} without a distance</Text>}
+        </View>
+      )}
+
+      {chipping && (
+        <View style={sgStyles.block}>
+          <Text style={sgStyles.blockTitle}>CHIPPING · {chipping.overall.holes} holes</Text>
+          <View style={sgStyles.headline}>
+            <Text style={sgStyles.big}>{chipping.overall.upDownPct}%</Text>
+            <Text style={sgStyles.bigUnit}>up & down</Text>
+            {chipping.trend && (
+              <Text style={[sgStyles.trend, { color: trendColour(chipping.trend.direction) }]}>
+                {trendArrow(chipping.trend.direction)} was {chipping.trend.previous}%
+              </Text>
+            )}
+          </View>
+          <Text style={sgStyles.line}>avg {chipping.overall.avgStrokes} strokes to hole out</Text>
+          <Text style={sgStyles.tableHead}>By lie — up & down %</Text>
+          {chipping.byLie.filter(l => l.stats.holes > 0).map(l => (
+            <SgRow
+              key={l.lie}
+              label={l.lie}
+              holes={l.stats.holes}
+              value={`${l.stats.upDownPct}%`}
+              barPct={l.stats.upDownPct}
+              colour={upDownColour(l.stats.upDownPct)}
+              right={`${l.stats.upDowns}/${l.stats.holes}`}
+            />
+          ))}
+          <Text style={sgStyles.tableHead}>By distance to the hole — up & down %</Text>
+          {chipping.bands.filter(b => b.stats.holes > 0).map(b => (
+            <SgRow
+              key={b.band.label}
+              label={b.band.label}
+              holes={b.stats.holes}
+              value={`${b.stats.upDownPct}%`}
+              barPct={b.stats.upDownPct}
+              colour={upDownColour(b.stats.upDownPct)}
+              right={`${b.stats.upDowns}/${b.stats.holes}`}
+            />
+          ))}
+          {chipping.noDistance > 0 && <Text style={sgStyles.note}>{chipping.noDistance} hole{chipping.noDistance === 1 ? '' : 's'} without a distance</Text>}
+        </View>
+      )}
+
+      {!sg.puttingFocus && !sg.chippingFocus && (
+        <Text style={sgStyles.note}>A focus spot appears once a distance or lie has at least {SPOT_MIN_HOLES} holes.</Text>
+      )}
+    </View>
+  );
+}
+
+/** Focus spots, weakest (highest fail %) first. */
+const focusSpots = (sg: ShortGameAnalysis): FocusSpot[] =>
+  [sg.chippingFocus, sg.puttingFocus]
+    .filter((f): f is FocusSpot => !!f)
+    .sort((a, b) => b.failPct - a.failPct);
+
+const sgStyles = StyleSheet.create({
+  card: { backgroundColor: '#f1f8e9', borderWidth: 1, borderColor: '#aed581' },
+  sub: { fontSize: 12, color: '#777', marginBottom: 8, lineHeight: 16 },
+  block: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#dcedc8' },
+  blockTitle: { fontSize: 11, fontWeight: '700', color: '#558b2f', letterSpacing: 0.8, marginBottom: 2 },
+  headline: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' },
+  big: { fontSize: 30, fontWeight: 'bold', color: '#33691e' },
+  bigUnit: { fontSize: 14, color: '#555' },
+  trend: { fontSize: 13, fontWeight: '700', marginLeft: 6 },
+  line: { fontSize: 13, color: '#555', marginBottom: 6 },
+  tableHead: { fontSize: 11, fontWeight: '700', color: '#888', marginTop: 6, marginBottom: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  rowLabel: { fontSize: 13, fontWeight: '600', color: '#333', width: 62 },
+  barBg: { flex: 1, height: 10, backgroundColor: '#e0e0e0', borderRadius: 5, overflow: 'hidden' },
+  barFill: { height: 10, borderRadius: 5 },
+  rowValue: { fontSize: 13, fontWeight: '700', color: '#333', width: 38, textAlign: 'right' },
+  rowRight: { fontSize: 11, color: '#888', width: 74 },
+  note: { fontSize: 12, color: '#888', marginTop: 4 },
+  focusBox: { backgroundColor: '#fff3e0', borderRadius: 10, padding: 10, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: '#FF9800' },
+  focusLabel: { fontSize: 14, fontWeight: 'bold', color: '#e65100' },
+  focusDetail: { fontSize: 13, color: '#555', marginTop: 2 },
+  focusPractice: { fontSize: 13, color: '#333', marginTop: 4 },
+});
 
 export default function InsightsScreen() {
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
@@ -444,6 +586,9 @@ export default function InsightsScreen() {
   const clubStats = calcClubStats();
   const clubTips = getClubTrainingTip(clubStats);
   const yardageGaps = calcYardageGaps(clubStats);
+  const shortGame = analyzeShortGame(sessions);
+  const hasShortGame = !!(shortGame.putting || shortGame.chipping);
+  const spots = focusSpots(shortGame);
 
   const hasNoData = rounds.length === 0 && sessions.length === 0;
 
@@ -628,6 +773,15 @@ export default function InsightsScreen() {
         )
       ) : (
         <>
+          {hasShortGame ? (
+            <ShortGameCard sg={shortGame} />
+          ) : (
+            <View style={styles.card}>
+              <Text style={styles.heading}>⛳ Short Game on Course</Text>
+              <Text style={styles.sub}>Play a Putting Course or Chipping Course drill to see putting by distance and up & down % by lie.</Text>
+            </View>
+          )}
+
           <View style={styles.card}>
             <Text style={styles.heading}>⚠️ Weakest Area</Text>
             <Text style={styles.highlight}>{stats.weakest}</Text>
@@ -636,6 +790,14 @@ export default function InsightsScreen() {
 
           <View style={styles.card}>
             <Text style={styles.heading}>🎯 Recommendation</Text>
+            {/* Weakest on-course short-game spots first (from the course drills) */}
+            {spots.map(f => (
+              <View key={f.area} style={sgStyles.focusBox}>
+                <Text style={sgStyles.focusLabel}>{f.area}: {f.label}</Text>
+                <Text style={sgStyles.focusDetail}>{f.detail}</Text>
+                <Text style={sgStyles.focusPractice}>→ Practise {f.practice}.</Text>
+              </View>
+            ))}
             <Text style={styles.body}>{getRecommendation(stats, clubStats)}</Text>
           </View>
 
