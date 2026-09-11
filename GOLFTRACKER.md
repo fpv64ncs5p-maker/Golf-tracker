@@ -1,6 +1,11 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-09-11** — **Treinos, rondas e drills ordenados pela data em que foram jogados, não pela ordem em que foram registados (Jo reparou).** O Dashboard fazia só `.reverse()` da ordem gravada, por isso uma ronda de 2022 importada hoje aparecia no topo.
+  **Decisão da Jo:** ordenar **os dados gravados** (não só as listas) — assim o handicap ("últimas 20 rondas", WHS) e os alvos adaptativos de chipping/pitching também passam a ser pela data real.
+  **Implementação:** `sortByDate()` em `services/storage.ts` (estável: mesma data mantém a ordem de registo; data inválida vai para o início). `getSessions/getRounds/getRangeDrills` devolvem ordenado e `save*` grava ordenado, por isso o índice `length - 1 - index` do Dashboard e dos detalhes continua a apontar para o mesmo item. Não é preciso migração: os dados antigos ficam ordenados na leitura e gravam-se ordenados no próximo save.
+  **Cuidado com edição de datas:** em `session-detail` e `range-drill-detail` (que ficam abertos depois de gravar) o `originalIndex` é recalculado com `sortByDate(all).indexOf(updated)` — senão o 2.º save/delete no mesmo ecrã acertava no item errado. No Dashboard, mudar a data fecha o cartão expandido. `round-detail` não edita datas, por isso fica igual.
+  tsc + eslint limpos; `sortByDate` testado (ordem, empates estáveis, data inválida, idempotente).
 - **2026-09-11** — **Putting Course: voltar atrás aos buracos (Jo testou e não conseguia).** Na sessão ao vivo os chips H1…Hn eram só leitura e só havia **↶ Undo** do último, por isso não dava para meter os metros depois. Jo escolheu **as duas formas** + **reabrir**:
   **Tocar num chip** → o painel passa a **"Editing hole N"** (azul) com metros e putts preenchidos; os botões de putts escolhem em vez de registar; **✓ Save hole / Cancel / 🗑**. Os metros que já estavam escritos para o buraco novo ficam guardados (`stashedDistance`) e voltam ao sair. Tocar outra vez no chip cancela.
   **✏️ Edit holes** → lista completa com o `PuttingCourseEditor` (metros, putts −/+, 🗑, + Add hole) e **✓ Done · back to hole N**; se havia um buraco em edição, é gravado antes.

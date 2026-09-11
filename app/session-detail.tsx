@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { getSessions, saveSessions } from '../services/storage';
+import { getSessions, saveSessions, sortByDate } from '../services/storage';
 import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, PuttingCourseHole } from '../types';
 import { PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine } from '../constants/scoring';
 import PuttingCourseEditor, { puttColour } from '../components/PuttingCourseEditor';
@@ -264,14 +264,17 @@ export default function SessionDetailScreen() {
 
   const saveSession = async () => {
     const all = await getSessions();
-    all[originalIndex] = {
+    const updated: PracticeSession = {
       ...all[originalIndex],
       notes,
       date: sessionDate,
       drills: proximity ? [] : drills,
       proximityDrills: proximity ? proxDrills : undefined,
     };
+    all[originalIndex] = updated;
     await saveSessions(all);
+    // A changed date moves the session in the played-date order — follow it.
+    setOriginalIndex(sortByDate(all).indexOf(updated));
     setDirty(false);
     if (Platform.OS === 'web') alert('Session saved!');
     else Alert.alert('Saved', 'Session updated successfully.');

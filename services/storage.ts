@@ -74,26 +74,43 @@ async function saveToSupabase<T>(
   }
 }
 
+// ── Played-date order ───────────────────────────────────────────────────────
+// Sessions, rounds and range drills are always kept oldest → newest by the date
+// they were PLAYED (their `date` field), not the order they were logged in.
+// Reads sort and saves sort, so every screen's index (the Dashboard shows the
+// list reversed, detail screens use `length - 1 - index`) refers to the same
+// order, and "most recent N" logic (handicap last 20, adaptive targets) is by date.
+// The sort is stable: items with the same date keep their logged order.
+
+const playedTime = (date: string) => {
+  const t = new Date(date).getTime();
+  return Number.isNaN(t) ? 0 : t;
+};
+
+export function sortByDate<T extends { date: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => playedTime(a.date) - playedTime(b.date));
+}
+
 // ── Sessions ────────────────────────────────────────────────────────────────
 
 export async function getSessions(): Promise<PracticeSession[]> {
   const result = await getFromSupabase<PracticeSession[]>('sessions');
-  return result ?? [];
+  return sortByDate(result ?? []);
 }
 
 export async function saveSessions(sessions: PracticeSession[]): Promise<void> {
-  await saveToSupabase('sessions', sessions);
+  await saveToSupabase('sessions', sortByDate(sessions));
 }
 
 // ── Rounds ──────────────────────────────────────────────────────────────────
 
 export async function getRounds(): Promise<Round[]> {
   const result = await getFromSupabase<Round[]>('rounds');
-  return result ?? [];
+  return sortByDate(result ?? []);
 }
 
 export async function saveRounds(rounds: Round[]): Promise<void> {
-  await saveToSupabase('rounds', rounds);
+  await saveToSupabase('rounds', sortByDate(rounds));
 }
 
 // ── Courses ─────────────────────────────────────────────────────────────────
@@ -124,11 +141,11 @@ export async function saveClubDistances(
 
 export async function getRangeDrills(): Promise<RangeDrill[]> {
   const result = await getFromSupabase<RangeDrill[]>('range_drills');
-  return result ?? [];
+  return sortByDate(result ?? []);
 }
 
 export async function saveRangeDrills(drills: RangeDrill[]): Promise<void> {
-  await saveToSupabase('range_drills', drills, true);
+  await saveToSupabase('range_drills', sortByDate(drills), true);
 }
 
 // ── Draft Round (stays local — transient data) ───────────────────────────────

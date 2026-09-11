@@ -118,6 +118,7 @@ export default function DashboardScreen() {
       await saveRounds(all);
     }
     loadData();
+    setExpandedCard(null); // the card may move to a new position in date order
   };
 
   // ── Open date picker ────────────────────────────────────────

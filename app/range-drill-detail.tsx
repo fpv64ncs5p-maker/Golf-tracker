@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, router } from 'expo-router';
-import { getRangeDrills, saveRangeDrills } from '../services/storage';
+import { getRangeDrills, saveRangeDrills, sortByDate } from '../services/storage';
 import type { RangeDrill, RangeDrillHole } from '../types';
 import { PUTT_AVG_MIN_HOLES, drillPuttsPerHole, round1 } from '../constants/scoring';
 
@@ -136,6 +136,8 @@ export default function RangeDrillDetailScreen() {
       const all = await getRangeDrills();
       all[originalIndex] = updated;
       await saveRangeDrills(all);
+      // A changed date moves the drill in the played-date order — follow it.
+      setOriginalIndex(sortByDate(all).indexOf(updated));
       setDrill(updated);
       setEditing(false);
     } catch (e) {
