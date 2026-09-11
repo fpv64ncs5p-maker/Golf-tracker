@@ -86,6 +86,7 @@ export default function StartScreen() {
             <Text style={styles.resumeSessionTitle}>▶ Resume {draftSession.type} session</Text>
             <Text style={styles.resumeSessionSub}>
               {drillCount} drill{drillCount !== 1 ? 's' : ''} logged
+              {(draftSession?.pendingCourse?.length ?? 0) > 0 ? ` · ⛳ course on hole ${draftSession!.pendingCourse!.length + 1}` : ''}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.resumeSessionDiscard} onPress={discardSession}>

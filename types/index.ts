@@ -68,10 +68,21 @@ export interface Drill {
   name: string;
   // New: direction grid (Putting)
   grid?: DirectionGrid;
+  // Putting Course: walk a course putting from the green's far edge, par 2 per hole
+  course?: PuttingCourseHole[];
   // Legacy: made/attempts (Long Game / Short Game, and old Putting data)
   made?: string;
   attempts?: string;
   success: number;
+}
+
+/**
+ * One green of a Putting Course drill: first-putt length from the edge, and putts taken to hole out.
+ */
+export interface PuttingCourseHole {
+  hole: number;
+  distance: number | null;  // metres from the green edge to the hole (first putt); null if not measured
+  putts: number;
 }
 
 /**
@@ -221,6 +232,8 @@ export interface DraftSession {
   notes: string;
   drills: Drill[];
   proximityDrills: ProximityDrill[];
+  // Holes of a Putting Course drill still being played (not yet added as a drill)
+  pendingCourse?: PuttingCourseHole[];
   startedAt: string;
 }
 
@@ -254,6 +267,10 @@ export interface RangeDrill {
   duration: number;
   notes: string;
   holes: RangeDrillHole[];
+  // Putts per hole used for the estimated score, frozen when the drill started.
+  // From the Putting Course average; absent on older drills (= PUTTS_PER_HOLE).
+  puttsPerHole?: number;
+  puttsSampleHoles?: number;       // Putting Course holes that average came from (absent = default used)
 }
 
 /**
@@ -269,6 +286,8 @@ export interface DraftRangeDrill {
   currentShots: RangeDrillShot[];
   seconds: number;
   notes: string;
+  puttsPerHole?: number;           // frozen at start (see RangeDrill)
+  puttsSampleHoles?: number;
   startedAt: string;               // ISO timestamp, used for the resume banner
 }
 

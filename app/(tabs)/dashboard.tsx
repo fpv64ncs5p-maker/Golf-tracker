@@ -5,7 +5,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { getSessions, saveSessions, getRounds, saveRounds, getRangeDrills, saveRangeDrills, consumeReadError } from '../../services/storage';
 import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Drill, ProximityDrill, RangeDrill } from '../../types';
-import { PUTTS_PER_HOLE } from '../../constants/scoring';
+import { summarizePuttingCourse, fmtPuttingVsPar, drillPuttsPerHole, round1 } from '../../constants/scoring';
 import { router } from 'expo-router';
 
 export default function DashboardScreen() {
@@ -172,7 +172,8 @@ export default function DashboardScreen() {
       const isProx = type === 'Chipping' || type === 'Pitching';
       const allDrills = recent.flatMap((s: PracticeSession): (Drill | ProximityDrill)[] =>
         isProx ? (s.proximityDrills ?? []) : s.drills
-      ).filter(d => d.success > 0);
+      // Putting Course success is '% holes in ≤2 putts', not '% holed' — keep it out of this average
+      ).filter(d => d.success > 0 && !(d as Drill).course);
       if (allDrills.length === 0) continue;
       const avg = Math.round(allDrills.reduce((sum, d) => sum + d.success, 0) / allDrills.length);
       const label = type === 'Putting' ? 'holed' : 'on target';
@@ -320,7 +321,9 @@ export default function DashboardScreen() {
                     <Text style={styles.cardDetail}>⏱ {formatTime(item.duration)}  ·  🎯 {(item.drills?.length ?? 0) + (item.proximityDrills?.length ?? 0)} drills</Text>
                     {(item.drills?.length > 0) && (
                       <Text style={styles.cardDrills}>
-                        {item.drills.map((d) => `${d.name} ${d.success}%`).join('  ·  ')}
+                        {item.drills.map((d) => d.course
+                          ? `⛳ ${d.name} ${summarizePuttingCourse(d.course).putts} putts (${fmtPuttingVsPar(summarizePuttingCourse(d.course).vsPar)})`
+                          : `${d.name} ${d.success}%`).join('  ·  ')}
                       </Text>
                     )}
                     {(item.proximityDrills?.length ?? 0) > 0 && (
@@ -466,9 +469,9 @@ export default function DashboardScreen() {
             rangeDrills.map((item: RangeDrill, i: number) => {
               const key = `drill-${i}`;
               const isExpanded = expandedCard === key;
-              const strokes = item.holes.reduce((s, h) => s + h.shots.length, 0) + item.holes.length * PUTTS_PER_HOLE;
+              const strokes = round1(item.holes.reduce((s, h) => s + h.shots.length, 0) + item.holes.length * drillPuttsPerHole(item));
               const par = item.holes.reduce((s, h) => s + h.par, 0);
-              const vsPar = strokes - par;
+              const vsPar = round1(strokes - par);
               return (
                 <Pressable key={key} onPress={() => toggleCard(key)}>
                   <View style={[styles.card, isExpanded && styles.cardExpanded]}>

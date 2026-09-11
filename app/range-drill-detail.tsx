@@ -7,7 +7,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { useLocalSearchParams, router } from 'expo-router';
 import { getRangeDrills, saveRangeDrills } from '../services/storage';
 import type { RangeDrill, RangeDrillHole } from '../types';
-import { PUTTS_PER_HOLE } from '../constants/scoring';
+import { PUTT_AVG_MIN_HOLES, drillPuttsPerHole, round1 } from '../constants/scoring';
 
 const CLUBS = [
   'Driver', '3W', '5W', '4H', '5H',
@@ -200,10 +200,11 @@ export default function RangeDrillDetailScreen() {
 
   const holes = editing ? editHoles : drill.holes;
   const shotsToGreen = holes.reduce((s, h) => s + h.shots.length, 0);
-  const totalPutts = holes.length * PUTTS_PER_HOLE;
-  const totalStrokes = shotsToGreen + totalPutts;
+  const puttsPerHole = drillPuttsPerHole(drill); // frozen when the drill was played
+  const totalPutts = round1(holes.length * puttsPerHole);
+  const totalStrokes = round1(shotsToGreen + totalPutts);
   const totalPar = holes.reduce((s, h) => s + h.par, 0);
-  const totalVsPar = totalStrokes - totalPar;
+  const totalVsPar = round1(totalStrokes - totalPar);
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -273,7 +274,8 @@ export default function RangeDrillDetailScreen() {
         </View>
 
         <Text style={styles.scoreCaption}>
-          Score = {shotsToGreen} shots to green + {totalPutts} putts ({PUTTS_PER_HOLE}/hole)
+          Score = {shotsToGreen} shots to green + {totalPutts} putts ({puttsPerHole}/hole
+          {drill.puttsSampleHoles ? ` · from ${drill.puttsSampleHoles} putting-course holes` : drill.puttsPerHole != null ? ` · default until ${PUTT_AVG_MIN_HOLES} putting-course holes` : ''})
         </Text>
 
         {/* Notes */}
@@ -301,8 +303,8 @@ export default function RangeDrillDetailScreen() {
               <Text style={[styles.colClubs, styles.headerText]}>Clubs</Text>
             </View>
             {drill.holes.map((h, i) => {
-              const holeScore = h.shots.length + PUTTS_PER_HOLE;
-              const vp = holeScore - h.par;
+              const holeScore = round1(h.shots.length + puttsPerHole);
+              const vp = round1(holeScore - h.par);
               const clubSummary = h.shots.map(s => s.club).join(', ');
               const isOpen = expandedHole === i;
               return (

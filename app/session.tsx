@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions, getDraftSession, saveDraftSession, clearDraftSession } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, PuttingCourseHole } from '../types';
+import { PUTTS_PER_HOLE, PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine } from '../constants/scoring';
+import { parseMetres, puttColour } from '../components/PuttingCourseEditor';
 
 // ── Drill suggestions ─────────────────────────────────────────────────────────
 
@@ -177,6 +179,12 @@ export default function SessionScreen() {
   const [made, setMade] = useState('');
   const [attempts, setAttempts] = useState('');
 
+  // Putting Course (Putting only): walk the greens, putt from the far edge, par 2 per hole
+  const [puttMode, setPuttMode] = useState<'grid' | 'course'>('grid');
+  const [courseHoles, setCourseHoles] = useState<PuttingCourseHole[]>([]);
+  const [courseDistance, setCourseDistance] = useState('');
+  const courseMode = sessionType === 'Putting' && puttMode === 'course';
+
   // Saved drills
   const [drills, setDrills] = useState<Drill[]>([]);
   const [proxDrills, setProxDrills] = useState<ProximityDrill[]>([]);
@@ -196,6 +204,10 @@ export default function SessionScreen() {
       setNotes(draft.notes);
       setDrills(draft.drills ?? []);
       setProxDrills(draft.proximityDrills ?? []);
+      if (draft.pendingCourse?.length) {
+        setCourseHoles(draft.pendingCourse);
+        setPuttMode('course');
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once on mount
@@ -203,17 +215,18 @@ export default function SessionScreen() {
   // Autosave the committed drills + notes so an interrupted session can be resumed.
   // `seconds` is captured at each save point but excluded from deps (no per-tick writes).
   useEffect(() => {
-    if (drills.length === 0 && proxDrills.length === 0 && !notes.trim()) return;
+    if (drills.length === 0 && proxDrills.length === 0 && courseHoles.length === 0 && !notes.trim()) return;
     saveDraftSession({
       type: sessionType,
       seconds,
       notes,
       drills,
       proximityDrills: proxDrills,
+      pendingCourse: courseHoles.length ? courseHoles : undefined,
       startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drills, proxDrills, notes]);
+  }, [drills, proxDrills, notes, courseHoles]);
 
   // Load adaptive level for chipping/pitching
   useEffect(() => {
@@ -268,6 +281,37 @@ export default function SessionScreen() {
     setDrillName('');
     setGrid(emptyGrid());
     setProxClub(null);
+  };
+
+  // ── Putting Course ─────────────────────────────────────────────────────────
+
+  // Tapping a putt count logs the current green and moves to the next one.
+  const logCourseHole = (putts: number) => {
+    setCourseHoles(prev => [...prev, { hole: prev.length + 1, distance: parseMetres(courseDistance), putts }]);
+    setCourseDistance('');
+  };
+
+  const stepCourseDistance = (delta: number) => {
+    const current = parseMetres(courseDistance) ?? 0;
+    const next = Math.max(0, Math.round(current + delta));
+    setCourseDistance(next > 0 ? String(next) : '');
+  };
+
+  const courseDrill = (holes: PuttingCourseHole[]): Drill => ({
+    name: PUTTING_COURSE_NAME,
+    course: holes,
+    success: summarizePuttingCourse(holes).success,
+  });
+
+  const addCourseDrill = () => {
+    if (courseHoles.length === 0) {
+      const msg = 'Log at least one hole before adding.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('No holes logged', msg);
+      return;
+    }
+    setDrills(prev => [...prev, courseDrill(courseHoles)]);
+    setCourseHoles([]);
+    setCourseDistance('');
   };
 
   // ── Add proximity bucket drill (Chipping) ──────────────────────────────────
@@ -336,6 +380,11 @@ export default function SessionScreen() {
           threshold: effectiveThreshold, thresholdLevel: thresholdToLevel(effectiveThreshold), success: bucketSuccessPct,
           club: proxClub ?? undefined,
         }];
+      }
+
+      // Auto-add any unfinished Putting Course
+      if (courseHoles.length > 0) {
+        finalDrills = [...finalDrills, courseDrill(courseHoles)];
       }
 
       // Auto-add any pending grid drill (Putting / Pitching)
@@ -409,6 +458,16 @@ export default function SessionScreen() {
       // Putting
       if (drills.length === 0) return <Text style={styles.empty}>No drills yet — pick one below or type your own</Text>;
       return drills.map((d, i) => {
+        if (d.course) {
+          return (
+            <View key={i} style={styles.drillItem}>
+              <Text style={styles.drillName}>⛳ {d.name}</Text>
+              <View style={styles.drillScoreCol}>
+                <Text style={styles.drillScore}>{puttingCourseLine(d.course)}</Text>
+              </View>
+            </View>
+          );
+        }
         const miss = d.grid ? dominantMiss(d.grid) : null;
         const total = d.grid ? sumGrid(d.grid) : 0;
         return (
@@ -456,7 +515,74 @@ export default function SessionScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {useBuckets ? (
+        {/* Putting: choose between a grid drill and the Putting Course */}
+        {sessionType === 'Putting' && (
+          <View style={styles.modeRow}>
+            {([['grid', '🎯 Grid drill'], ['course', '⛳ Putting Course']] as const).map(([m, label]) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.modeBtn, puttMode === m && styles.modeBtnActive]}
+                onPress={() => setPuttMode(m)}
+              >
+                <Text style={[styles.modeBtnText, puttMode === m && styles.modeBtnTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {courseMode ? (
+          <>
+            <Text style={styles.courseHoleTitle}>Hole {courseHoles.length + 1}</Text>
+            <Text style={styles.courseHint}>Putt from the far edge of the green · par {PUTTS_PER_HOLE}</Text>
+
+            <Text style={styles.clubSelectorLabel}>First putt — metres from the edge</Text>
+            <View style={styles.metresRow}>
+              <TouchableOpacity style={styles.bucketBtn} onPress={() => stepCourseDistance(-1)}>
+                <Text style={styles.bucketBtnText}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                value={courseDistance}
+                onChangeText={setCourseDistance}
+                placeholder="—"
+                keyboardType="decimal-pad"
+                style={styles.metresInput}
+              />
+              <Text style={styles.metresUnit}>m</Text>
+              <TouchableOpacity style={styles.bucketBtn} onPress={() => stepCourseDistance(1)}>
+                <Text style={styles.bucketBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.clubSelectorLabel}>Putts to hole out — tap to log the hole</Text>
+            <View style={styles.puttRow}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <TouchableOpacity key={n} style={styles.puttBtn} onPress={() => logCourseHole(n)}>
+                  <Text style={[styles.puttBtnText, { color: puttColour(n) }]}>{n === 5 ? '5+' : n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {courseHoles.length > 0 && (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chipsContainer}>
+                  {courseHoles.map(h => (
+                    <View key={h.hole} style={styles.holeChip}>
+                      <Text style={styles.holeChipHole}>H{h.hole}</Text>
+                      <Text style={styles.holeChipDist}>{h.distance != null ? `${h.distance}m` : '—'}</Text>
+                      <Text style={[styles.holeChipPutts, { color: puttColour(h.putts) }]}>{h.putts}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+                <View style={styles.previewRow}>
+                  <Text style={styles.proxPreview}>{puttingCourseLine(courseHoles)}</Text>
+                  <TouchableOpacity onPress={() => setCourseHoles(prev => prev.slice(0, -1))} style={styles.resetBtn}>
+                    <Text style={styles.resetBtnText}>↶ Undo</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </>
+        ) : useBuckets ? (
           <>
             {/* Suggestion chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chipsContainer}>
@@ -677,8 +803,8 @@ export default function SessionScreen() {
           </>
         )}
 
-        <TouchableOpacity style={styles.addButton} onPress={useBuckets ? addBucketDrill : useGrid ? addGridDrill : addLegacyDrill}>
-          <Text style={styles.addText}>+ Add Drill</Text>
+        <TouchableOpacity style={styles.addButton} onPress={courseMode ? addCourseDrill : useBuckets ? addBucketDrill : useGrid ? addGridDrill : addLegacyDrill}>
+          <Text style={styles.addText}>{courseMode ? '✓ Finish course · add drill' : '+ Add Drill'}</Text>
         </TouchableOpacity>
 
         <TextInput
@@ -804,6 +930,25 @@ const styles = StyleSheet.create({
   bucketBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center' },
   bucketBtnText: { fontSize: 22, color: '#333' },
   bucketCount: { fontSize: 20, fontWeight: 'bold', width: 32, textAlign: 'center' },
+
+  // Putting Course
+  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  modeBtn: { flex: 1, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center', backgroundColor: '#fff' },
+  modeBtnActive: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
+  modeBtnText: { fontSize: 14, fontWeight: '600', color: '#555' },
+  modeBtnTextActive: { color: '#fff' },
+  courseHoleTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center' },
+  courseHint: { fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 12 },
+  metresRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 },
+  metresInput: { width: 80, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingVertical: 8, fontSize: 20, fontWeight: 'bold', textAlign: 'center', backgroundColor: '#fafafa' },
+  metresUnit: { fontSize: 16, color: '#666', marginLeft: -4 },
+  puttRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  puttBtn: { flex: 1, minHeight: 54, borderRadius: 12, borderWidth: 1, borderColor: '#ddd', backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center' },
+  puttBtnText: { fontSize: 22, fontWeight: 'bold' },
+  holeChip: { alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: '#f7f7f7', borderWidth: 1, borderColor: '#eee', minWidth: 48 },
+  holeChipHole: { fontSize: 11, color: '#888', fontWeight: '700' },
+  holeChipDist: { fontSize: 11, color: '#666' },
+  holeChipPutts: { fontSize: 16, fontWeight: 'bold' },
 
   notesInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 10, fontSize: 14, backgroundColor: '#fafafa', marginBottom: 10, minHeight: 44 },
   addButton: { backgroundColor: '#4CAF50', padding: 14, borderRadius: 10, marginBottom: 10 },

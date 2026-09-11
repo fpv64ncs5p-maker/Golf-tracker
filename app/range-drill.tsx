@@ -5,13 +5,16 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import {
-  getCourses, getRangeDrills, saveRangeDrills,
+  getCourses, getRangeDrills, saveRangeDrills, getSessions,
   getDraftRangeDrill, saveDraftRangeDrill, clearDraftRangeDrill,
 } from '../services/storage';
 import type {
   Course, HoleDefinition, RangeDrill, RangeDrillHole, RangeDrillShot, DraftRangeDrill,
 } from '../types';
-import { PUTTS_PER_HOLE, NEAR_GREEN_M } from '../constants/scoring';
+import {
+  PUTTS_PER_HOLE, NEAR_GREEN_M, PUTT_AVG_MIN_HOLES,
+  puttingCourseAverage, round1, type PuttingAverage,
+} from '../constants/scoring';
 import { TEE_COLOUR_MAP } from '../constants/theme';
 
 // ── Club list ─────────────────────────────────────────────────────────────────
@@ -69,6 +72,11 @@ export default function RangeDrillScreen() {
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [distanceInput, setDistanceInput] = useState('');
 
+  // Putts per hole for the estimated score: the current Putting Course average
+  // (loaded once), frozen into `drillPutts` when a drill starts or resumes.
+  const [puttAvg, setPuttAvg] = useState<PuttingAverage | null>(null);
+  const [drillPutts, setDrillPutts] = useState<{ perHole: number; sample?: number }>({ perHole: PUTTS_PER_HOLE });
+
   // ── Complete ───────────────────────────────────────────────────────────────
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -80,6 +88,7 @@ export default function RangeDrillScreen() {
   useEffect(() => {
     getCourses().then(setCourses);
     getDraftRangeDrill().then(setDraft);
+    getSessions().then(sessions => setPuttAvg(puttingCourseAverage(sessions))).catch(() => setPuttAvg(null));
   }, []);
 
   // Autosave the in-progress drill after each shot/hole so it survives interruptions.
@@ -96,10 +105,12 @@ export default function RangeDrillScreen() {
       currentShots,
       seconds,
       notes,
+      puttsPerHole: drillPutts.perHole,
+      puttsSampleHoles: drillPutts.sample,
       startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, selectedCourse, selectedHoles, holeIndex, completedHoles, currentShots]);
+  }, [phase, selectedCourse, selectedHoles, holeIndex, completedHoles, currentShots, drillPutts]);
 
   // Start timer when drill becomes active
   useEffect(() => {
@@ -142,6 +153,10 @@ export default function RangeDrillScreen() {
     setCurrentShots(draft.currentShots);
     setSeconds(draft.seconds);
     setNotes(draft.notes);
+    // Drafts from before this feature carry no value — freeze the current average now.
+    setDrillPutts(draft.puttsPerHole != null
+      ? { perHole: draft.puttsPerHole, sample: draft.puttsSampleHoles }
+      : puttAvg ? { perHole: puttAvg.puttsPerHole, sample: puttAvg.holes } : { perHole: PUTTS_PER_HOLE });
     setSelectedClub(null);
     setDistanceInput('');
     setDraft(null);
@@ -172,6 +187,7 @@ export default function RangeDrillScreen() {
     setSelectedClub(null);
     setDistanceInput('');
     setSeconds(0);
+    setDrillPutts(puttAvg ? { perHole: puttAvg.puttsPerHole, sample: puttAvg.holes } : { perHole: PUTTS_PER_HOLE });
     setPhase('active');
   };
 
@@ -285,6 +301,8 @@ export default function RangeDrillScreen() {
         duration: seconds,
         notes,
         holes: completedHoles,
+        puttsPerHole: drillPutts.perHole,
+        puttsSampleHoles: drillPutts.sample,
       };
       const existing = await getRangeDrills();
       await saveRangeDrills([...existing, drill]);
@@ -314,10 +332,10 @@ export default function RangeDrillScreen() {
   // ── Score summary helpers ──────────────────────────────────────────────────
 
   const shotsToGreen = completedHoles.reduce((s, h) => s + h.shots.length, 0);
-  const totalPutts = completedHoles.length * PUTTS_PER_HOLE;
-  const totalStrokes = shotsToGreen + totalPutts; // estimated full-hole score (shots + putts)
+  const totalPutts = round1(completedHoles.length * drillPutts.perHole);
+  const totalStrokes = round1(shotsToGreen + totalPutts); // estimated full-hole score (shots + putts)
   const totalPar = completedHoles.reduce((s, h) => s + h.par, 0);
-  const totalVsPar = totalStrokes - totalPar;
+  const totalVsPar = round1(totalStrokes - totalPar);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -683,7 +701,8 @@ export default function RangeDrillScreen() {
         </View>
       </View>
       <Text style={styles.scoreCaption}>
-        Score = {shotsToGreen} shots to green + {totalPutts} putts ({PUTTS_PER_HOLE}/hole)
+        Score = {shotsToGreen} shots to green + {totalPutts} putts ({drillPutts.perHole}/hole
+        {drillPutts.sample ? ` · your last ${drillPutts.sample} putting-course holes` : ` · default until ${PUTT_AVG_MIN_HOLES} putting-course holes`})
       </Text>
 
       {/* Hole-by-hole scorecard */}
@@ -696,8 +715,8 @@ export default function RangeDrillScreen() {
         <Text style={[styles.scColClubs, styles.scHeaderText]}>Clubs</Text>
       </View>
       {completedHoles.map((h, i) => {
-        const holeScore = h.shots.length + PUTTS_PER_HOLE;
-        const vp = holeScore - h.par;
+        const holeScore = round1(h.shots.length + drillPutts.perHole);
+        const vp = round1(holeScore - h.par);
         const clubSummary = h.shots.map(s => s.club).join(', ');
         return (
           <View key={i} style={[styles.scorecardRow, i % 2 === 0 && styles.scorecardRowAlt]}>

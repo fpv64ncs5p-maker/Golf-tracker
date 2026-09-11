@@ -1,6 +1,19 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-09-11** — **Putting Course: um percurso inteiro só a putar.** Exercício da Jo: percorrer um campo (Par 3), e em cada green putar **só a partir da borda mais longe**, contando os putts — **par 2 por buraco** (o mesmo `PUTTS_PER_HOLE` que o Range Drill assume). É o espelho do Range Drill: aquele conta pancadas até ao green e *assume* 2 putts; este conta só os putts.
+  **Decisões da Jo:** vive **dentro da sessão de Putting** (não é um ecrã novo nem ligado a um campo da base de dados); em **cada buraco** mete os **metros desde a borda** (primeiro putt) e o número de putts.
+  **Modelo:** `Drill.course?: PuttingCourseHole[]` com `{ hole, distance: number | null, putts }`. `success` = % de buracos em ≤2 putts. Resumo em `summarizePuttingCourse()` / `puttingCourseLine()` (`constants/scoring.ts`): putts, ±par, 1-putts, 3-putts+, média de metros.
+  **Sessão (`session.tsx`):** toggle **🎯 Grid drill / ⛳ Putting Course** (só Putting). Por buraco: metros (−/+ ou escrever, aceita vírgula) → tocar **1 2 3 4 5+** regista o buraco e passa ao seguinte (metros limpam). Chips H1…Hn coloridos (verde 1-putt, cinza par, laranja 3+), **↶ Undo**, botão **✓ Finish course · add drill**. Buracos em curso vão para o rascunho (`DraftSession.pendingCourse`) e o banner de Resume mostra "⛳ course on hole N". "End & Save" junta um percurso por acabar automaticamente.
+  **Detalhe (`session-detail.tsx`):** cartão com mini-scorecard; ✏️ abre `components/PuttingCourseEditor.tsx` (metros + putts −/+ + 🗑 por buraco, **+ Add hole**); no **+ Add** há o chip **⛳ Putting Course** para registar um percurso depois (ex.: o de ontem). Delete como os outros drills.
+  **Dashboard:** o cartão mostra "⛳ Putting Course N putts (±par)"; o putting course **fica fora da média "% holed"** porque o `success` mede outra coisa. Insights não mexe (já só contava drills made/attempts). tsc + eslint limpos; não testado no browser (o build web não corre na VM Linux — binário lightningcss é do Mac).
+  **Jo concordou com todas as escolhas** (success = % buracos em ≤2 putts, fora da média "% holed"; "5+" grava 5; metros opcionais).
+- **2026-09-11** — **Range Drill passa a usar a média real de putts do Putting Course em vez dos 2 fixos.** Ideia que saiu do Putting Course; Jo aprovou.
+  **Decisões da Jo:** fonte = **Putting Courses** (não as rondas — sabendo que partir da borda mais longe torna a estimativa mais dura/conservadora); **congelado por drill** — cada drill guarda o valor com que foi jogado, os scores antigos nunca mudam.
+  **Regra:** `puttingCourseAverage(sessions)` (`constants/scoring.ts`) — média de putts/buraco nos **últimos 45 buracos** de Putting Course (sessões ordenadas por data), arredondada a 1 casa; **`null` com menos de 9 buracos** → fica o `PUTTS_PER_HOLE` (2).
+  **Modelo:** `RangeDrill.puttsPerHole?` + `puttsSampleHoles?` (e o mesmo no `DraftRangeDrill`). O valor é fixado **quando o drill começa** (`startDrill`) e vai para o rascunho e para o save; ao retomar um rascunho antigo sem valor, fixa a média atual. Drills antigos sem campo = 2 (`drillPuttsPerHole()`); a edição no detalhe preserva o campo (`...drill`).
+  **Scores com decimais:** buraco = pancadas + putts/buraco (ex. 3 + 1.8 = 4.8), totais e ±par arredondados a 1 casa (`round1`) — Complete, detalhe e cartão do Dashboard. A legenda diz de onde vem: "(1.8/hole · your last 27 putting-course holes)" ou "default until 9 putting-course holes".
+  tsc + eslint limpos; lógica testada (janela, mínimo, ordenação). Não testado no browser.
 - **2026-09-07** — **Rondas qualifying vs treino, e dois índices em vez de um.** A Jo regista **todas** as rondas na app, treino incluído; na NGF regista **só as que escolhe** como qualifying. Os dois índices medem coisas diferentes de propósito, e a app mostrava um número só, que se confundia com o oficial (nesse dia: app 23.7 · NGF 23.5 → 23.2 depois da ronda; a proximidade é coincidência dos registos se sobreporem, não sinal de correção).
   **Modelo:** `Round.qualifying?: boolean`. Rondas novas nascem com `qualifying: false` (`round.tsx`) — treino por omissão, marca-se depois de registada. O toggle vive no **detalhe da ronda**, por baixo do tempo, e grava logo (é um campo, não faz parte do fluxo de edição de buracos), por isso **as rondas antigas também se marcam** sem re-introduzir nada. Badge verde `✅ qualifying` no cartão do dashboard, ao lado do `📥 imported`.
   **Insights:** `calcHandicap(qualifyingOnly = false)` filtra a fonte antes do `enrichRound`. O cartão passa a ter duas colunas — **ALL ROUNDS** e **QUALIFYING** — e a segunda mostra `—` com `n/3 rounds marked` enquanto não houver três. Só a coluna qualifying é comparável com o índice da federação, e o cartão di-lo.
@@ -162,6 +175,7 @@ app/
 - Manual drill entry: name, made, total → calculates success %
 - **Session notes** — free text field above "End & Save Session"
 - Notes shown on dashboard session cards with 📝 icon
+- **⛳ Putting Course** (Putting only) — toggle next to the grid drill: per hole enter metres from the green's far edge + tap putts (1–5+); par 2/hole; undo; resumable; edit per hole in session detail
 - Saves to AsyncStorage under `sessions` key
 - Drills sourced from practice PDF (all distances in metres):
   - **Putting**: Short Putts 1m (×25), 2m (×15), Lag 6/9/12m (×10), Pressure Ladder
@@ -268,7 +282,9 @@ app/
   "date": "2026-03-27T10:00:00.000Z",
   "notes": "Felt good on short putts today",
   "drills": [
-    { "name": "Short Putts 1m", "made": "23", "attempts": "25", "success": 92 }
+    { "name": "Short Putts 1m", "made": "23", "attempts": "25", "success": 92 },
+    { "name": "Putting Course", "success": 67,
+      "course": [ { "hole": 1, "distance": 12, "putts": 2 }, { "hole": 2, "distance": 8.5, "putts": 1 }, { "hole": 3, "distance": null, "putts": 3 } ] }
   ]
 }
 ```
