@@ -1,6 +1,11 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-09-11** — **Putting Course: voltar atrás aos buracos (Jo testou e não conseguia).** Na sessão ao vivo os chips H1…Hn eram só leitura e só havia **↶ Undo** do último, por isso não dava para meter os metros depois. Jo escolheu **as duas formas** + **reabrir**:
+  **Tocar num chip** → o painel passa a **"Editing hole N"** (azul) com metros e putts preenchidos; os botões de putts escolhem em vez de registar; **✓ Save hole / Cancel / 🗑**. Os metros que já estavam escritos para o buraco novo ficam guardados (`stashedDistance`) e voltam ao sair. Tocar outra vez no chip cancela.
+  **✏️ Edit holes** → lista completa com o `PuttingCourseEditor` (metros, putts −/+, 🗑, + Add hole) e **✓ Done · back to hole N**; se havia um buraco em edição, é gravado antes.
+  **Reabrir:** tocar na linha **⛳ Putting Course** já terminada (em cima, "✏️ tap to reopen") tira-a dos drills e devolve os buracos ao editor; bloqueado se já houver outro percurso a meio.
+  Uma edição aberta e não gravada entra na mesma em **Finish course** e **End & Save** (`withPendingEdit`). tsc + eslint limpos; não testado no browser (npm bloqueado no container, build não corre na VM).
 - **2026-09-11** — **Putting Course: um percurso inteiro só a putar.** Exercício da Jo: percorrer um campo (Par 3), e em cada green putar **só a partir da borda mais longe**, contando os putts — **par 2 por buraco** (o mesmo `PUTTS_PER_HOLE` que o Range Drill assume). É o espelho do Range Drill: aquele conta pancadas até ao green e *assume* 2 putts; este conta só os putts.
   **Decisões da Jo:** vive **dentro da sessão de Putting** (não é um ecrã novo nem ligado a um campo da base de dados); em **cada buraco** mete os **metros desde a borda** (primeiro putt) e o número de putts.
   **Modelo:** `Drill.course?: PuttingCourseHole[]` com `{ hole, distance: number | null, putts }`. `success` = % de buracos em ≤2 putts. Resumo em `summarizePuttingCourse()` / `puttingCourseLine()` (`constants/scoring.ts`): putts, ±par, 1-putts, 3-putts+, média de metros.

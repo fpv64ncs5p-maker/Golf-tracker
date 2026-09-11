@@ -4,7 +4,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions, getDraftSession, saveDraftSession, clearDraftSession } from '../services/storage';
 import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, PuttingCourseHole } from '../types';
 import { PUTTS_PER_HOLE, PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine } from '../constants/scoring';
-import { parseMetres, puttColour } from '../components/PuttingCourseEditor';
+import PuttingCourseEditor, { parseMetres, puttColour } from '../components/PuttingCourseEditor';
 
 // ── Drill suggestions ─────────────────────────────────────────────────────────
 
@@ -183,6 +183,12 @@ export default function SessionScreen() {
   const [puttMode, setPuttMode] = useState<'grid' | 'course'>('grid');
   const [courseHoles, setCourseHoles] = useState<PuttingCourseHole[]>([]);
   const [courseDistance, setCourseDistance] = useState('');
+  // Going back to a logged hole: its index, the putts being chosen, and the
+  // new-hole metres typed before jumping back (restored afterwards).
+  const [editingHole, setEditingHole] = useState<number | null>(null);
+  const [editPutts, setEditPutts] = useState(PUTTS_PER_HOLE);
+  const [stashedDistance, setStashedDistance] = useState('');
+  const [showHoleList, setShowHoleList] = useState(false);
   const courseMode = sessionType === 'Putting' && puttMode === 'course';
 
   // Saved drills
@@ -297,6 +303,57 @@ export default function SessionScreen() {
     setCourseDistance(next > 0 ? String(next) : '');
   };
 
+  const startHoleEdit = (i: number) => {
+    const h = courseHoles[i];
+    if (!h) return;
+    if (editingHole === null) setStashedDistance(courseDistance);
+    setShowHoleList(false);
+    setEditingHole(i);
+    setEditPutts(h.putts);
+    setCourseDistance(h.distance != null ? String(h.distance) : '');
+  };
+
+  const endHoleEdit = () => {
+    setEditingHole(null);
+    setCourseDistance(stashedDistance);
+    setStashedDistance('');
+  };
+
+  // Holes with the open (unsaved) hole edit applied — used by Save, Finish and End & Save.
+  const withPendingEdit = (holes: PuttingCourseHole[]) =>
+    editingHole === null || !holes[editingHole]
+      ? holes
+      : holes.map((h, i) => (i === editingHole ? { ...h, distance: parseMetres(courseDistance), putts: editPutts } : h));
+
+  const saveHoleEdit = () => {
+    setCourseHoles(withPendingEdit(courseHoles));
+    endHoleEdit();
+  };
+
+  const deleteEditingHole = () => {
+    if (editingHole === null) return;
+    setCourseHoles(prev => prev.filter((_, i) => i !== editingHole).map((h, i) => ({ ...h, hole: i + 1 })));
+    endHoleEdit();
+  };
+
+  // Tap a finished Putting Course in the top list to bring it back into the editor.
+  const reopenCourse = (i: number) => {
+    const d = drills[i];
+    if (!d?.course) return;
+    if (courseHoles.length > 0) {
+      const msg = 'Finish (or undo) the course you are playing before reopening another one.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('Course in progress', msg);
+      return;
+    }
+    setDrills(prev => prev.filter((_, idx) => idx !== i));
+    setCourseHoles(d.course.map(h => ({ ...h })));
+    setPuttMode('course');
+    setEditingHole(null);
+    setShowHoleList(false);
+    setCourseDistance('');
+    setStashedDistance('');
+  };
+
   const courseDrill = (holes: PuttingCourseHole[]): Drill => ({
     name: PUTTING_COURSE_NAME,
     course: holes,
@@ -304,14 +361,18 @@ export default function SessionScreen() {
   });
 
   const addCourseDrill = () => {
-    if (courseHoles.length === 0) {
+    const holes = withPendingEdit(courseHoles);
+    if (holes.length === 0) {
       const msg = 'Log at least one hole before adding.';
       if (Platform.OS === 'web') alert(msg); else Alert.alert('No holes logged', msg);
       return;
     }
-    setDrills(prev => [...prev, courseDrill(courseHoles)]);
+    setDrills(prev => [...prev, courseDrill(holes)]);
     setCourseHoles([]);
     setCourseDistance('');
+    setEditingHole(null);
+    setStashedDistance('');
+    setShowHoleList(false);
   };
 
   // ── Add proximity bucket drill (Chipping) ──────────────────────────────────
@@ -383,8 +444,9 @@ export default function SessionScreen() {
       }
 
       // Auto-add any unfinished Putting Course
-      if (courseHoles.length > 0) {
-        finalDrills = [...finalDrills, courseDrill(courseHoles)];
+      const pendingHoles = withPendingEdit(courseHoles);
+      if (pendingHoles.length > 0) {
+        finalDrills = [...finalDrills, courseDrill(pendingHoles)];
       }
 
       // Auto-add any pending grid drill (Putting / Pitching)
@@ -460,12 +522,15 @@ export default function SessionScreen() {
       return drills.map((d, i) => {
         if (d.course) {
           return (
-            <View key={i} style={styles.drillItem}>
-              <Text style={styles.drillName}>⛳ {d.name}</Text>
+            <TouchableOpacity key={i} style={styles.drillItem} onPress={() => reopenCourse(i)}>
+              <View style={styles.drillNameCol}>
+                <Text style={styles.drillName}>⛳ {d.name}</Text>
+                <Text style={styles.reopenHint}>✏️ tap to reopen</Text>
+              </View>
               <View style={styles.drillScoreCol}>
                 <Text style={styles.drillScore}>{puttingCourseLine(d.course)}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         }
         const miss = d.grid ? dominantMiss(d.grid) : null;
@@ -530,9 +595,20 @@ export default function SessionScreen() {
           </View>
         )}
 
-        {courseMode ? (
+        {courseMode && showHoleList ? (
           <>
-            <Text style={styles.courseHoleTitle}>Hole {courseHoles.length + 1}</Text>
+            <Text style={styles.courseHoleTitle}>Edit holes</Text>
+            <Text style={styles.courseHint}>Change metres or putts, remove or add holes</Text>
+            <PuttingCourseEditor holes={courseHoles} onChange={setCourseHoles} />
+            <TouchableOpacity style={styles.doneBtn} onPress={() => setShowHoleList(false)}>
+              <Text style={styles.doneBtnText}>✓ Done · back to hole {courseHoles.length + 1}</Text>
+            </TouchableOpacity>
+          </>
+        ) : courseMode ? (
+          <>
+            <Text style={[styles.courseHoleTitle, editingHole !== null && styles.courseHoleTitleEditing]}>
+              {editingHole !== null ? `Editing hole ${editingHole + 1}` : `Hole ${courseHoles.length + 1}`}
+            </Text>
             <Text style={styles.courseHint}>Putt from the far edge of the green · par {PUTTS_PER_HOLE}</Text>
 
             <Text style={styles.clubSelectorLabel}>First putt — metres from the edge</Text>
@@ -553,30 +629,65 @@ export default function SessionScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.clubSelectorLabel}>Putts to hole out — tap to log the hole</Text>
+            <Text style={styles.clubSelectorLabel}>
+              {editingHole !== null ? 'Putts to hole out' : 'Putts to hole out — tap to log the hole'}
+            </Text>
             <View style={styles.puttRow}>
-              {[1, 2, 3, 4, 5].map(n => (
-                <TouchableOpacity key={n} style={styles.puttBtn} onPress={() => logCourseHole(n)}>
-                  <Text style={[styles.puttBtnText, { color: puttColour(n) }]}>{n === 5 ? '5+' : n}</Text>
-                </TouchableOpacity>
-              ))}
+              {[1, 2, 3, 4, 5].map(n => {
+                const picked = editingHole !== null && (n === 5 ? editPutts >= 5 : editPutts === n);
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    style={[styles.puttBtn, picked && styles.puttBtnPicked]}
+                    onPress={() => editingHole !== null
+                      ? setEditPutts(p => (n === 5 ? (p >= 5 ? p : 5) : n))
+                      : logCourseHole(n)}
+                  >
+                    <Text style={[styles.puttBtnText, { color: puttColour(n) }]}>{n === 5 ? '5+' : n}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+
+            {editingHole !== null && (
+              <View style={styles.holeEditActions}>
+                <TouchableOpacity style={[styles.holeEditBtn, styles.holeEditSave]} onPress={saveHoleEdit}>
+                  <Text style={styles.holeEditSaveText}>✓ Save hole</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.holeEditBtn} onPress={endHoleEdit}>
+                  <Text style={styles.holeEditText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.holeEditBtn} onPress={deleteEditingHole}>
+                  <Text style={styles.holeEditText}>🗑</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {courseHoles.length > 0 && (
               <>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chipsContainer}>
-                  {courseHoles.map(h => (
-                    <View key={h.hole} style={styles.holeChip}>
+                  {courseHoles.map((h, i) => (
+                    <TouchableOpacity
+                      key={h.hole}
+                      style={[styles.holeChip, editingHole === i && styles.holeChipSelected]}
+                      onPress={() => (editingHole === i ? endHoleEdit() : startHoleEdit(i))}
+                    >
                       <Text style={styles.holeChipHole}>H{h.hole}</Text>
                       <Text style={styles.holeChipDist}>{h.distance != null ? `${h.distance}m` : '—'}</Text>
                       <Text style={[styles.holeChipPutts, { color: puttColour(h.putts) }]}>{h.putts}</Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </ScrollView>
+                <Text style={styles.chipHint}>Tap a hole to change it</Text>
                 <View style={styles.previewRow}>
-                  <Text style={styles.proxPreview}>{puttingCourseLine(courseHoles)}</Text>
-                  <TouchableOpacity onPress={() => setCourseHoles(prev => prev.slice(0, -1))} style={styles.resetBtn}>
-                    <Text style={styles.resetBtnText}>↶ Undo</Text>
+                  <Text style={styles.proxPreview}>{puttingCourseLine(withPendingEdit(courseHoles))}</Text>
+                  {editingHole === null && (
+                    <TouchableOpacity onPress={() => setCourseHoles(prev => prev.slice(0, -1))} style={[styles.resetBtn, { marginRight: 6 }]}>
+                      <Text style={styles.resetBtnText}>↶ Undo</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={() => { if (editingHole !== null) saveHoleEdit(); setShowHoleList(true); }} style={styles.resetBtn}>
+                    <Text style={styles.resetBtnText}>✏️ Edit holes</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -949,6 +1060,18 @@ const styles = StyleSheet.create({
   holeChipHole: { fontSize: 11, color: '#888', fontWeight: '700' },
   holeChipDist: { fontSize: 11, color: '#666' },
   holeChipPutts: { fontSize: 16, fontWeight: 'bold' },
+  holeChipSelected: { borderColor: '#1565C0', borderWidth: 2, backgroundColor: '#e3f2fd' },
+  chipHint: { fontSize: 11, color: '#999', textAlign: 'center', marginTop: -4, marginBottom: 6 },
+  courseHoleTitleEditing: { color: '#1565C0' },
+  puttBtnPicked: { borderColor: '#1565C0', borderWidth: 2, backgroundColor: '#e3f2fd' },
+  holeEditActions: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  holeEditBtn: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#f0f0f0', alignItems: 'center' },
+  holeEditSave: { flex: 1, backgroundColor: '#1565C0' },
+  holeEditSaveText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  holeEditText: { color: '#555', fontWeight: '600', fontSize: 15 },
+  doneBtn: { backgroundColor: '#1565C0', padding: 12, borderRadius: 10, marginBottom: 10 },
+  doneBtnText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 15 },
+  reopenHint: { fontSize: 11, color: '#1565C0', marginTop: 2 },
 
   notesInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 10, fontSize: 14, backgroundColor: '#fafafa', marginBottom: 10, minHeight: 44 },
   addButton: { backgroundColor: '#4CAF50', padding: 14, borderRadius: 10, marginBottom: 10 },
