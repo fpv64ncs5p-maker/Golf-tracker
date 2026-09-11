@@ -5,7 +5,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { getSessions, saveSessions, getRounds, saveRounds, getRangeDrills, saveRangeDrills, consumeReadError } from '../../services/storage';
 import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Drill, ProximityDrill, RangeDrill } from '../../types';
-import { summarizePuttingCourse, fmtPuttingVsPar, drillPuttsPerHole, round1 } from '../../constants/scoring';
+import { summarizePuttingCourse, summarizeChippingCourse, fmtPuttingVsPar, drillPuttsPerHole, round1 } from '../../constants/scoring';
 import { router } from 'expo-router';
 
 export default function DashboardScreen() {
@@ -173,8 +173,9 @@ export default function DashboardScreen() {
       const isProx = type === 'Chipping' || type === 'Pitching';
       const allDrills = recent.flatMap((s: PracticeSession): (Drill | ProximityDrill)[] =>
         isProx ? (s.proximityDrills ?? []) : s.drills
-      // Putting Course success is '% holes in ≤2 putts', not '% holed' — keep it out of this average
-      ).filter(d => d.success > 0 && !(d as Drill).course);
+      // Course drills measure '% holes in ≤2' (putting) / up-and-down % (chipping),
+      // not '% holed' / '% on target' — keep them out of this average
+      ).filter(d => d.success > 0 && !(d as Drill).course && !(d as ProximityDrill).chipCourse);
       if (allDrills.length === 0) continue;
       const avg = Math.round(allDrills.reduce((sum, d) => sum + d.success, 0) / allDrills.length);
       const label = type === 'Putting' ? 'holed' : 'on target';
@@ -330,7 +331,11 @@ export default function DashboardScreen() {
                     {(item.proximityDrills?.length ?? 0) > 0 && (
                       <>
                         <Text style={styles.cardDrills}>
-                          🎱 {item.proximityDrills!.reduce((sum, d) => sum + d.attempts, 0)} balls  ·  {item.proximityDrills!.map((d) => `${d.name} ${d.success}%`).join('  ·  ')}
+                          🎱 {item.proximityDrills!.reduce((sum, d) => sum + d.attempts, 0)} balls  ·  {item.proximityDrills!.map((d) => {
+                            if (!d.chipCourse) return `${d.name} ${d.success}%`;
+                            const c = summarizeChippingCourse(d.chipCourse);
+                            return `⛳ ${d.name} ${c.strokes} strokes (${fmtPuttingVsPar(c.vsPar)}) · up & down ${c.upDownPct}%`;
+                          }).join('  ·  ')}
                         </Text>
                       </>
                     )}

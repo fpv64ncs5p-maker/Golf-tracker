@@ -6,9 +6,13 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { getSessions, saveSessions, sortByDate } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, PuttingCourseHole } from '../types';
-import { PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine } from '../constants/scoring';
-import PuttingCourseEditor, { puttColour } from '../components/PuttingCourseEditor';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, CourseEditorHole } from '../types';
+import {
+  PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine,
+  CHIPPING_COURSE_NAME, CHIP_LIES, summarizeChippingCourse, chippingCourseLine,
+  puttingToEditor, editorToPutting, chippingToEditor, editorToChipping,
+} from '../constants/scoring';
+import PuttingCourseEditor, { puttColour, LIE_SHORT } from '../components/PuttingCourseEditor';
 
 const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
@@ -216,7 +220,7 @@ export default function SessionDetailScreen() {
   const [newGrid, setNewGrid] = useState<DirectionGrid>(emptyGrid());
   const [newBuckets, setNewBuckets] = useState<ProximityBuckets>(emptyBuckets());
   const [newProxClub, setNewProxClub] = useState<string | null>(null);
-  const [newCourse, setNewCourse] = useState<PuttingCourseHole[]>([]);
+  const [newCourse, setNewCourse] = useState<CourseEditorHole[]>([]);
   // Legacy add form (Long Game)
   const [newMade, setNewMade] = useState('');
   const [newAttempts, setNewAttempts] = useState('');
@@ -227,7 +231,7 @@ export default function SessionDetailScreen() {
   const [editGrid, setEditGrid] = useState<DirectionGrid>(emptyGrid());
   const [editBuckets, setEditBuckets] = useState<ProximityBuckets>(emptyBuckets());
   const [editClub, setEditClub] = useState<string | null>(null);
-  const [editCourse, setEditCourse] = useState<PuttingCourseHole[]>([]);
+  const [editCourse, setEditCourse] = useState<CourseEditorHole[]>([]);
   // Legacy edit
   const [editMade, setEditMade] = useState('');
   const [editAttempts, setEditAttempts] = useState('');
@@ -301,7 +305,14 @@ export default function SessionDetailScreen() {
 
   const confirmAddDrill = () => {
     if (!newDrillName) return;
-    if (useBuckets) {
+    if (useBuckets && newDrillName === CHIPPING_COURSE_NAME) {
+      if (newCourse.length === 0) return;
+      const chipCourse = editorToChipping(newCourse);
+      setProxDrills(prev => [...prev, {
+        name: CHIPPING_COURSE_NAME, attempts: chipCourse.length, chipCourse,
+        success: summarizeChippingCourse(chipCourse).upDownPct,
+      }]);
+    } else if (useBuckets) {
       const total = sumBuckets(newBuckets);
       if (total === 0) return;
       setProxDrills(prev => [...prev, {
@@ -311,7 +322,8 @@ export default function SessionDetailScreen() {
       }]);
     } else if (useGrid && !proximity && newDrillName === PUTTING_COURSE_NAME) {
       if (newCourse.length === 0) return;
-      setDrills(prev => [...prev, { name: PUTTING_COURSE_NAME, course: newCourse, success: summarizePuttingCourse(newCourse).success }]);
+      const course = editorToPutting(newCourse);
+      setDrills(prev => [...prev, { name: PUTTING_COURSE_NAME, course, success: summarizePuttingCourse(course).success }]);
     } else if (useGrid) {
       const total = sumGrid(newGrid);
       if (total === 0) return;
@@ -345,12 +357,13 @@ export default function SessionDetailScreen() {
       setEditGrid(d.grid ? { ...d.grid } : emptyGrid());
       setEditBuckets(d.buckets ? { ...d.buckets } : emptyBuckets());
       setEditClub(d.club ?? null);
+      if (d.chipCourse) setEditCourse(chippingToEditor(d.chipCourse));
     } else {
       const d = drills[i];
       setEditingIndex(i);
       setEditName(d.name);
       if (d.course) {
-        setEditCourse(d.course.map(h => ({ ...h })));
+        setEditCourse(puttingToEditor(d.course));
       } else if (d.grid) {
         setEditGrid({ ...d.grid });
       } else {
@@ -363,7 +376,14 @@ export default function SessionDetailScreen() {
 
   const confirmEdit = () => {
     if (editingIndex === null || !editName) return;
-    if (proximity) {
+    if (proximity && proxDrills[editingIndex]?.chipCourse) {
+      // Chipping Course
+      if (editCourse.length === 0) return;
+      const chipCourse = editorToChipping(editCourse);
+      setProxDrills(prev => prev.map((d, i) =>
+        i === editingIndex ? { ...d, chipCourse, attempts: chipCourse.length, success: summarizeChippingCourse(chipCourse).upDownPct } : d
+      ));
+    } else if (proximity) {
       const editingBucket = drillIsBucket(proxDrills[editingIndex]);
       if (editingBucket) {
         const total = sumBuckets(editBuckets);
@@ -389,8 +409,9 @@ export default function SessionDetailScreen() {
       if (d.course) {
         // Putting Course
         if (editCourse.length === 0) return;
+        const course = editorToPutting(editCourse);
         setDrills(prev => prev.map((dd, i) =>
-          i === editingIndex ? { ...dd, course: editCourse, success: summarizePuttingCourse(editCourse).success } : dd
+          i === editingIndex ? { ...dd, course, success: summarizePuttingCourse(course).success } : dd
         ));
       } else if (d.grid || sumGrid(editGrid) > 0) {
         // Grid drill (Putting)
@@ -438,11 +459,19 @@ export default function SessionDetailScreen() {
     const isBucketDrill = drillIsBucket(proxDrill);
     const centerLabel = getCenterLabel(proxDrill?.threshold, session.type);
 
-    if (isEditing && stdDrill?.course) {
+    if (isEditing && (stdDrill?.course || proxDrill?.chipCourse)) {
+      const chip = !!proxDrill?.chipCourse;
       return (
         <View key={i} style={styles.editCard}>
-          <Text style={[styles.drillName, { marginBottom: 8 }]}>⛳ {stdDrill.name}</Text>
-          <PuttingCourseEditor holes={editCourse} onChange={setEditCourse} />
+          <Text style={[styles.drillName, { marginBottom: 8 }]}>⛳ {d.name}</Text>
+          <PuttingCourseEditor
+            holes={editCourse}
+            onChange={setEditCourse}
+            summary={hs => (chip ? chippingCourseLine(editorToChipping(hs)) : puttingCourseLine(editorToPutting(hs)))}
+            strokesLabel={chip ? 'Strokes' : 'Putts'}
+            distanceLabel={chip ? 'To hole' : 'From edge'}
+            lies={chip ? CHIP_LIES : undefined}
+          />
           <View style={styles.editActions}>
             <TouchableOpacity onPress={confirmEdit} style={styles.confirmBtn}>
               <Text style={styles.confirmBtnText}>✓ Save</Text>
@@ -552,8 +581,21 @@ export default function SessionDetailScreen() {
         <View style={styles.drillInfo}>
           {isProx ? (
             <>
-              <Text style={styles.drillName}>{proxDrill!.name}{proxDrill!.club ? ` · ${proxDrill!.club}` : ''}</Text>
-              {proxDrill!.grid ? (
+              <Text style={styles.drillName}>{proxDrill!.chipCourse ? '⛳ ' : ''}{proxDrill!.name}{proxDrill!.club ? ` · ${proxDrill!.club}` : ''}</Text>
+              {proxDrill!.chipCourse ? (
+                <>
+                  <Text style={styles.drillScore}>{chippingCourseLine(proxDrill!.chipCourse)}</Text>
+                  <View style={styles.courseCard}>
+                    {proxDrill!.chipCourse.map(h => (
+                      <View key={h.hole} style={styles.courseCell}>
+                        <Text style={styles.courseCellHole}>{h.hole} · {LIE_SHORT[h.lie]}</Text>
+                        <Text style={styles.courseCellDist}>{h.distance != null ? `${h.distance}m` : '—'}</Text>
+                        <Text style={[styles.courseCellPutts, { color: puttColour(h.strokes) }]}>{h.strokes}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : proxDrill!.grid ? (
                 <>
                   <Text style={styles.drillScore}>{proxDrill!.attempts} shots · {proxDrill!.success}% ≤{proxDrill!.threshold ?? 2}m</Text>
                   {dominantMiss(proxDrill!.grid) && <Text style={styles.drillMiss}>↳ miss: {dominantMiss(proxDrill!.grid)}</Text>}
@@ -670,12 +712,15 @@ export default function SessionDetailScreen() {
               {/* Suggestions */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {session.type === 'Putting' && (
-                    <TouchableOpacity style={[styles.chip, newDrillName === PUTTING_COURSE_NAME && styles.chipSelected]}
-                      onPress={() => { setNewDrillName(PUTTING_COURSE_NAME); setNewCourse([]); }}>
-                      <Text style={[styles.chipText, newDrillName === PUTTING_COURSE_NAME && styles.chipTextSelected]}>⛳ {PUTTING_COURSE_NAME}</Text>
-                    </TouchableOpacity>
-                  )}
+                  {(session.type === 'Putting' || session.type === 'Chipping') && (() => {
+                    const cn = session.type === 'Putting' ? PUTTING_COURSE_NAME : CHIPPING_COURSE_NAME;
+                    return (
+                      <TouchableOpacity style={[styles.chip, newDrillName === cn && styles.chipSelected]}
+                        onPress={() => { setNewDrillName(cn); setNewCourse([]); }}>
+                        <Text style={[styles.chipText, newDrillName === cn && styles.chipTextSelected]}>⛳ {cn}</Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
                   {(GRID_SUGGESTIONS[session.type] ?? []).map(name => (
                     <TouchableOpacity key={name} style={[styles.chip, newDrillName === name && styles.chipSelected]}
                       onPress={() => { setNewDrillName(name); setNewGrid(emptyGrid()); setNewProxClub(null); }}>
@@ -693,7 +738,7 @@ export default function SessionDetailScreen() {
 
               <TextInput value={newDrillName} onChangeText={setNewDrillName} placeholder="Drill name" style={[styles.input, { marginBottom: 8 }]} />
 
-              {proximity && (
+              {proximity && newDrillName !== CHIPPING_COURSE_NAME && (
                 <>
                   <Text style={styles.clubLabel}>Club (optional)</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
@@ -708,7 +753,16 @@ export default function SessionDetailScreen() {
                 </>
               )}
 
-              {useBuckets ? (
+              {useBuckets && newDrillName === CHIPPING_COURSE_NAME ? (
+                <PuttingCourseEditor
+                  holes={newCourse}
+                  onChange={setNewCourse}
+                  summary={hs => chippingCourseLine(editorToChipping(hs))}
+                  strokesLabel="Strokes"
+                  distanceLabel="To hole"
+                  lies={CHIP_LIES}
+                />
+              ) : useBuckets ? (
                 <>
                   <BucketEditor values={newBuckets} onChange={(key, delta) => setNewBuckets(prev => ({ ...prev, [key]: Math.max(0, prev[key] + delta) }))} />
                   {sumBuckets(newBuckets) > 0 && (
@@ -723,7 +777,7 @@ export default function SessionDetailScreen() {
                   )}
                 </>
               ) : useGrid && !proximity && newDrillName === PUTTING_COURSE_NAME ? (
-                <PuttingCourseEditor holes={newCourse} onChange={setNewCourse} />
+                <PuttingCourseEditor holes={newCourse} onChange={setNewCourse} summary={hs => puttingCourseLine(editorToPutting(hs))} />
               ) : useGrid ? (
                 <>
                   <GridDisplay
@@ -860,7 +914,7 @@ const styles = StyleSheet.create({
   drillScore: { fontSize: 13, color: '#4CAF50', marginTop: 2 },
   // Putting Course scorecard
   courseCard: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
-  courseCell: { width: 46, alignItems: 'center', paddingVertical: 4, borderRadius: 8, backgroundColor: '#f7f7f7', borderWidth: 1, borderColor: '#eee' },
+  courseCell: { width: 52, alignItems: 'center', paddingVertical: 4, borderRadius: 8, backgroundColor: '#f7f7f7', borderWidth: 1, borderColor: '#eee' },
   courseCellHole: { fontSize: 10, color: '#888', fontWeight: '700' },
   courseCellDist: { fontSize: 10, color: '#666' },
   courseCellPutts: { fontSize: 15, fontWeight: 'bold' },

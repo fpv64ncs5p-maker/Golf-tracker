@@ -1,4 +1,4 @@
-import type { PuttingCourseHole, PracticeSession } from '../types';
+import type { PuttingCourseHole, PracticeSession, ChippingCourseHole, ChipLie, CourseEditorHole } from '../types';
 
 /**
  * Putts assumed per hole when estimating a full-hole score from a range drill.
@@ -97,3 +97,79 @@ export const puttingCourseAverage = (sessions: PracticeSession[]): PuttingAverag
 
 /** Putts per hole a range drill was scored with (older drills: the flat default). */
 export const drillPuttsPerHole = (d: { puttsPerHole?: number }) => d.puttsPerHole ?? PUTTS_PER_HOLE;
+
+// ── Chipping Course ───────────────────────────────────────────────────────────
+// Walk a course and on every hole chip from off the green (fairway, rough or
+// bunker) and hole out. Par is 2 — chip and one putt, i.e. an up and down.
+
+export const CHIPPING_COURSE_NAME = 'Chipping Course';
+export const CHIP_COURSE_PAR = PUTTS_PER_HOLE; // 2
+export const CHIP_LIES: readonly ChipLie[] = ['Fairway', 'Rough', 'Bunker'];
+
+export interface ChippingCourseSummary {
+  holes: number;
+  strokes: number;
+  par: number;
+  vsPar: number;
+  chipIns: number;
+  upDowns: number;               // holes in ≤ 2 (chip-ins included)
+  upDownPct: number;
+  sandHoles: number;
+  sandSaves: number;             // bunker holes in ≤ 2
+  sandSavePct: number | null;    // null when no bunker holes
+  avgDistance: number | null;
+  byLie: Record<ChipLie, { holes: number; upDowns: number }>;
+}
+
+export const summarizeChippingCourse = (holes: ChippingCourseHole[]): ChippingCourseSummary => {
+  const byLie = { Fairway: { holes: 0, upDowns: 0 }, Rough: { holes: 0, upDowns: 0 }, Bunker: { holes: 0, upDowns: 0 } };
+  for (const h of holes) {
+    const bucket = byLie[h.lie] ?? byLie.Fairway;
+    bucket.holes++;
+    if (h.strokes <= CHIP_COURSE_PAR) bucket.upDowns++;
+  }
+  const strokes = holes.reduce((s, h) => s + h.strokes, 0);
+  const upDowns = holes.filter(h => h.strokes <= CHIP_COURSE_PAR).length;
+  const measured = holes.filter(h => h.distance != null);
+  return {
+    holes: holes.length,
+    strokes,
+    par: holes.length * CHIP_COURSE_PAR,
+    vsPar: strokes - holes.length * CHIP_COURSE_PAR,
+    chipIns: holes.filter(h => h.strokes === 1).length,
+    upDowns,
+    upDownPct: holes.length ? Math.round((upDowns / holes.length) * 100) : 0,
+    sandHoles: byLie.Bunker.holes,
+    sandSaves: byLie.Bunker.upDowns,
+    sandSavePct: byLie.Bunker.holes ? Math.round((byLie.Bunker.upDowns / byLie.Bunker.holes) * 100) : null,
+    avgDistance: measured.length
+      ? round1(measured.reduce((s, h) => s + (h.distance as number), 0) / measured.length)
+      : null,
+    byLie,
+  };
+};
+
+/** One-line summary, e.g. "9 holes · 21 strokes (+3) · up & down 5/9 (56%) · sand 1/2 · 1 chip-in · avg 9m" */
+export const chippingCourseLine = (holes: ChippingCourseHole[]): string => {
+  const s = summarizeChippingCourse(holes);
+  const parts = [
+    `${s.holes} hole${s.holes === 1 ? '' : 's'}`,
+    `${s.strokes} strokes (${fmtPuttingVsPar(s.vsPar)})`,
+    `up & down ${s.upDowns}/${s.holes} (${s.upDownPct}%)`,
+  ];
+  if (s.sandHoles > 0) parts.push(`sand ${s.sandSaves}/${s.sandHoles}`);
+  if (s.chipIns > 0) parts.push(`${s.chipIns} chip-in${s.chipIns === 1 ? '' : 's'}`);
+  if (s.avgDistance != null) parts.push(`avg ${s.avgDistance}m`);
+  return parts.join(' · ');
+};
+
+// ── Converters between stored course holes and the shared editor shape ───────
+
+export const puttingToEditor = (hs: PuttingCourseHole[]): CourseEditorHole[] =>
+  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.putts }));
+export const editorToPutting = (hs: CourseEditorHole[]): PuttingCourseHole[] =>
+  hs.map(h => ({ hole: h.hole, distance: h.distance, putts: h.strokes }));
+export const chippingToEditor = (hs: ChippingCourseHole[]): CourseEditorHole[] =>
+  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.strokes, lie: h.lie }));
+export const editorToChipping = (hs: CourseEditorHole[]): ChippingCourseHole[] =>
+  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.strokes, lie: h.lie ?? 'Fairway' }));

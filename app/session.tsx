@@ -2,9 +2,13 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions, getDraftSession, saveDraftSession, clearDraftSession } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, PuttingCourseHole } from '../types';
-import { PUTTS_PER_HOLE, PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine } from '../constants/scoring';
-import PuttingCourseEditor, { parseMetres, puttColour } from '../components/PuttingCourseEditor';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, CourseEditorHole, ChipLie } from '../types';
+import {
+  PUTTS_PER_HOLE, PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine,
+  CHIPPING_COURSE_NAME, CHIP_LIES, summarizeChippingCourse, chippingCourseLine,
+  puttingToEditor, editorToPutting, chippingToEditor, editorToChipping,
+} from '../constants/scoring';
+import PuttingCourseEditor, { parseMetres, puttColour, LIE_SHORT } from '../components/PuttingCourseEditor';
 
 // ── Drill suggestions ─────────────────────────────────────────────────────────
 
@@ -179,17 +183,27 @@ export default function SessionScreen() {
   const [made, setMade] = useState('');
   const [attempts, setAttempts] = useState('');
 
-  // Putting Course (Putting only): walk the greens, putt from the far edge, par 2 per hole
-  const [puttMode, setPuttMode] = useState<'grid' | 'course'>('grid');
-  const [courseHoles, setCourseHoles] = useState<PuttingCourseHole[]>([]);
+  // Course drills, par 2 per hole:
+  //  • Putting Course (Putting) — putt from the far edge of each green
+  //  • Chipping Course (Chipping) — chip from off the green (fairway/rough/bunker) and hole out
+  // Both are played through the same hole-by-hole flow; holes use the shared editor shape.
+  const courseKind: 'putting' | 'chipping' | null =
+    sessionType === 'Putting' ? 'putting' : sessionType === 'Chipping' ? 'chipping' : null;
+  const [drillMode, setDrillMode] = useState<'drill' | 'course'>('drill');
+  const [courseHoles, setCourseHoles] = useState<CourseEditorHole[]>([]);
   const [courseDistance, setCourseDistance] = useState('');
-  // Going back to a logged hole: its index, the putts being chosen, and the
+  const [courseLie, setCourseLie] = useState<ChipLie>('Fairway'); // Chipping: lie for the next hole
+  // Going back to a logged hole: its index, the strokes/lie being chosen, and the
   // new-hole metres typed before jumping back (restored afterwards).
   const [editingHole, setEditingHole] = useState<number | null>(null);
   const [editPutts, setEditPutts] = useState(PUTTS_PER_HOLE);
+  const [editLie, setEditLie] = useState<ChipLie>('Fairway');
   const [stashedDistance, setStashedDistance] = useState('');
   const [showHoleList, setShowHoleList] = useState(false);
-  const courseMode = sessionType === 'Putting' && puttMode === 'course';
+  const courseMode = courseKind !== null && drillMode === 'course';
+  const courseName = courseKind === 'chipping' ? CHIPPING_COURSE_NAME : PUTTING_COURSE_NAME;
+  const courseLine = (hs: CourseEditorHole[]) =>
+    courseKind === 'chipping' ? chippingCourseLine(editorToChipping(hs)) : puttingCourseLine(editorToPutting(hs));
 
   // Saved drills
   const [drills, setDrills] = useState<Drill[]>([]);
@@ -211,8 +225,11 @@ export default function SessionScreen() {
       setDrills(draft.drills ?? []);
       setProxDrills(draft.proximityDrills ?? []);
       if (draft.pendingCourse?.length) {
-        setCourseHoles(draft.pendingCourse);
-        setPuttMode('course');
+        setCourseHoles(puttingToEditor(draft.pendingCourse));
+        setDrillMode('course');
+      } else if (draft.pendingChipCourse?.length) {
+        setCourseHoles(chippingToEditor(draft.pendingChipCourse));
+        setDrillMode('course');
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,7 +245,8 @@ export default function SessionScreen() {
       notes,
       drills,
       proximityDrills: proxDrills,
-      pendingCourse: courseHoles.length ? courseHoles : undefined,
+      pendingCourse: courseKind === 'putting' && courseHoles.length ? editorToPutting(courseHoles) : undefined,
+      pendingChipCourse: courseKind === 'chipping' && courseHoles.length ? editorToChipping(courseHoles) : undefined,
       startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -289,11 +307,17 @@ export default function SessionScreen() {
     setProxClub(null);
   };
 
-  // ── Putting Course ─────────────────────────────────────────────────────────
+  // ── Course drills (Putting Course / Chipping Course) ───────────────────────
 
-  // Tapping a putt count logs the current green and moves to the next one.
-  const logCourseHole = (putts: number) => {
-    setCourseHoles(prev => [...prev, { hole: prev.length + 1, distance: parseMetres(courseDistance), putts }]);
+  // Tapping a putts/strokes count logs the current hole and moves to the next one.
+  // Chipping keeps the last lie selected, since lies often repeat.
+  const logCourseHole = (strokes: number) => {
+    setCourseHoles(prev => [...prev, {
+      hole: prev.length + 1,
+      distance: parseMetres(courseDistance),
+      strokes,
+      ...(courseKind === 'chipping' ? { lie: courseLie } : {}),
+    }]);
     setCourseDistance('');
   };
 
@@ -309,7 +333,8 @@ export default function SessionScreen() {
     if (editingHole === null) setStashedDistance(courseDistance);
     setShowHoleList(false);
     setEditingHole(i);
-    setEditPutts(h.putts);
+    setEditPutts(h.strokes);
+    setEditLie(h.lie ?? 'Fairway');
     setCourseDistance(h.distance != null ? String(h.distance) : '');
   };
 
@@ -320,10 +345,12 @@ export default function SessionScreen() {
   };
 
   // Holes with the open (unsaved) hole edit applied — used by Save, Finish and End & Save.
-  const withPendingEdit = (holes: PuttingCourseHole[]) =>
+  const withPendingEdit = (holes: CourseEditorHole[]) =>
     editingHole === null || !holes[editingHole]
       ? holes
-      : holes.map((h, i) => (i === editingHole ? { ...h, distance: parseMetres(courseDistance), putts: editPutts } : h));
+      : holes.map((h, i) => (i === editingHole
+        ? { ...h, distance: parseMetres(courseDistance), strokes: editPutts, ...(courseKind === 'chipping' ? { lie: editLie } : {}) }
+        : h));
 
   const saveHoleEdit = () => {
     setCourseHoles(withPendingEdit(courseHoles));
@@ -336,29 +363,41 @@ export default function SessionScreen() {
     endHoleEdit();
   };
 
-  // Tap a finished Putting Course in the top list to bring it back into the editor.
+  // Tap a finished course in the top list to bring it back into the editor.
   const reopenCourse = (i: number) => {
-    const d = drills[i];
-    if (!d?.course) return;
+    const holes = courseKind === 'chipping'
+      ? (proxDrills[i]?.chipCourse ? chippingToEditor(proxDrills[i].chipCourse!) : null)
+      : (drills[i]?.course ? puttingToEditor(drills[i].course!) : null);
+    if (!holes) return;
     if (courseHoles.length > 0) {
       const msg = 'Finish (or undo) the course you are playing before reopening another one.';
       if (Platform.OS === 'web') alert(msg); else Alert.alert('Course in progress', msg);
       return;
     }
-    setDrills(prev => prev.filter((_, idx) => idx !== i));
-    setCourseHoles(d.course.map(h => ({ ...h })));
-    setPuttMode('course');
+    if (courseKind === 'chipping') setProxDrills(prev => prev.filter((_, idx) => idx !== i));
+    else setDrills(prev => prev.filter((_, idx) => idx !== i));
+    setCourseHoles(holes);
+    setDrillMode('course');
     setEditingHole(null);
     setShowHoleList(false);
     setCourseDistance('');
     setStashedDistance('');
   };
 
-  const courseDrill = (holes: PuttingCourseHole[]): Drill => ({
-    name: PUTTING_COURSE_NAME,
-    course: holes,
-    success: summarizePuttingCourse(holes).success,
-  });
+  const puttingCourseDrill = (holes: CourseEditorHole[]): Drill => {
+    const course = editorToPutting(holes);
+    return { name: PUTTING_COURSE_NAME, course, success: summarizePuttingCourse(course).success };
+  };
+
+  const chippingCourseDrill = (holes: CourseEditorHole[]): ProximityDrill => {
+    const chipCourse = editorToChipping(holes);
+    return {
+      name: CHIPPING_COURSE_NAME,
+      attempts: chipCourse.length,
+      chipCourse,
+      success: summarizeChippingCourse(chipCourse).upDownPct,
+    };
+  };
 
   const addCourseDrill = () => {
     const holes = withPendingEdit(courseHoles);
@@ -367,7 +406,8 @@ export default function SessionScreen() {
       if (Platform.OS === 'web') alert(msg); else Alert.alert('No holes logged', msg);
       return;
     }
-    setDrills(prev => [...prev, courseDrill(holes)]);
+    if (courseKind === 'chipping') setProxDrills(prev => [...prev, chippingCourseDrill(holes)]);
+    else setDrills(prev => [...prev, puttingCourseDrill(holes)]);
     setCourseHoles([]);
     setCourseDistance('');
     setEditingHole(null);
@@ -443,10 +483,11 @@ export default function SessionScreen() {
         }];
       }
 
-      // Auto-add any unfinished Putting Course
+      // Auto-add any unfinished course
       const pendingHoles = withPendingEdit(courseHoles);
       if (pendingHoles.length > 0) {
-        finalDrills = [...finalDrills, courseDrill(pendingHoles)];
+        if (courseKind === 'chipping') finalProxDrills = [...finalProxDrills, chippingCourseDrill(pendingHoles)];
+        else finalDrills = [...finalDrills, puttingCourseDrill(pendingHoles)];
       }
 
       // Auto-add any pending grid drill (Putting / Pitching)
@@ -499,6 +540,19 @@ export default function SessionScreen() {
         <>
           <Text style={styles.totalBalls}>🎱 {proxDrills.reduce((s, d) => s + d.attempts, 0)} shots total</Text>
           {proxDrills.map((d, i) => {
+            if (d.chipCourse) {
+              return (
+                <TouchableOpacity key={i} style={styles.drillItem} onPress={() => reopenCourse(i)}>
+                  <View style={styles.drillNameCol}>
+                    <Text style={styles.drillName}>⛳ {d.name}</Text>
+                    <Text style={styles.reopenHint}>✏️ tap to reopen</Text>
+                  </View>
+                  <View style={styles.drillScoreCol}>
+                    <Text style={styles.drillScore}>{chippingCourseLine(d.chipCourse)}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             const miss = d.grid ? dominantMiss(d.grid) : null;
             return (
               <View key={i} style={styles.drillItem}>
@@ -580,16 +634,19 @@ export default function SessionScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Putting: choose between a grid drill and the Putting Course */}
-        {sessionType === 'Putting' && (
+        {/* Putting / Chipping: choose between a regular drill and the course drill */}
+        {courseKind && (
           <View style={styles.modeRow}>
-            {([['grid', '🎯 Grid drill'], ['course', '⛳ Putting Course']] as const).map(([m, label]) => (
+            {([
+              ['drill', courseKind === 'putting' ? '🎯 Grid drill' : '🎯 Target drill'],
+              ['course', `⛳ ${courseName}`],
+            ] as const).map(([m, label]) => (
               <TouchableOpacity
                 key={m}
-                style={[styles.modeBtn, puttMode === m && styles.modeBtnActive]}
-                onPress={() => setPuttMode(m)}
+                style={[styles.modeBtn, drillMode === m && styles.modeBtnActive]}
+                onPress={() => setDrillMode(m)}
               >
-                <Text style={[styles.modeBtnText, puttMode === m && styles.modeBtnTextActive]}>{label}</Text>
+                <Text style={[styles.modeBtnText, drillMode === m && styles.modeBtnTextActive]}>{label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -598,8 +655,17 @@ export default function SessionScreen() {
         {courseMode && showHoleList ? (
           <>
             <Text style={styles.courseHoleTitle}>Edit holes</Text>
-            <Text style={styles.courseHint}>Change metres or putts, remove or add holes</Text>
-            <PuttingCourseEditor holes={courseHoles} onChange={setCourseHoles} />
+            <Text style={styles.courseHint}>
+              {courseKind === 'chipping' ? 'Change metres, lie or strokes, remove or add holes' : 'Change metres or putts, remove or add holes'}
+            </Text>
+            <PuttingCourseEditor
+              holes={courseHoles}
+              onChange={setCourseHoles}
+              summary={courseLine}
+              strokesLabel={courseKind === 'chipping' ? 'Strokes' : 'Putts'}
+              distanceLabel={courseKind === 'chipping' ? 'To hole' : 'From edge'}
+              lies={courseKind === 'chipping' ? CHIP_LIES : undefined}
+            />
             <TouchableOpacity style={styles.doneBtn} onPress={() => setShowHoleList(false)}>
               <Text style={styles.doneBtnText}>✓ Done · back to hole {courseHoles.length + 1}</Text>
             </TouchableOpacity>
@@ -609,9 +675,35 @@ export default function SessionScreen() {
             <Text style={[styles.courseHoleTitle, editingHole !== null && styles.courseHoleTitleEditing]}>
               {editingHole !== null ? `Editing hole ${editingHole + 1}` : `Hole ${courseHoles.length + 1}`}
             </Text>
-            <Text style={styles.courseHint}>Putt from the far edge of the green · par {PUTTS_PER_HOLE}</Text>
+            <Text style={styles.courseHint}>
+              {courseKind === 'chipping'
+                ? `Chip from off the green and hole out · par ${PUTTS_PER_HOLE} (up and down)`
+                : `Putt from the far edge of the green · par ${PUTTS_PER_HOLE}`}
+            </Text>
 
-            <Text style={styles.clubSelectorLabel}>First putt — metres from the edge</Text>
+            {courseKind === 'chipping' && (
+              <>
+                <Text style={styles.clubSelectorLabel}>Lie</Text>
+                <View style={styles.lieRow}>
+                  {CHIP_LIES.map(l => {
+                    const active = (editingHole !== null ? editLie : courseLie) === l;
+                    return (
+                      <TouchableOpacity
+                        key={l}
+                        style={[styles.lieBtn, active && styles.lieBtnActive]}
+                        onPress={() => (editingHole !== null ? setEditLie(l) : setCourseLie(l))}
+                      >
+                        <Text style={[styles.lieBtnText, active && styles.lieBtnTextActive]}>{l}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+
+            <Text style={styles.clubSelectorLabel}>
+              {courseKind === 'chipping' ? 'Distance — metres to the hole' : 'First putt — metres from the edge'}
+            </Text>
             <View style={styles.metresRow}>
               <TouchableOpacity style={styles.bucketBtn} onPress={() => stepCourseDistance(-1)}>
                 <Text style={styles.bucketBtnText}>−</Text>
@@ -630,7 +722,8 @@ export default function SessionScreen() {
             </View>
 
             <Text style={styles.clubSelectorLabel}>
-              {editingHole !== null ? 'Putts to hole out' : 'Putts to hole out — tap to log the hole'}
+              {(courseKind === 'chipping' ? 'Strokes to hole out' : 'Putts to hole out')
+                + (editingHole !== null ? '' : ' — tap to log the hole')}
             </Text>
             <View style={styles.puttRow}>
               {[1, 2, 3, 4, 5].map(n => {
@@ -672,15 +765,15 @@ export default function SessionScreen() {
                       style={[styles.holeChip, editingHole === i && styles.holeChipSelected]}
                       onPress={() => (editingHole === i ? endHoleEdit() : startHoleEdit(i))}
                     >
-                      <Text style={styles.holeChipHole}>H{h.hole}</Text>
+                      <Text style={styles.holeChipHole}>H{h.hole}{h.lie ? ` · ${LIE_SHORT[h.lie]}` : ''}</Text>
                       <Text style={styles.holeChipDist}>{h.distance != null ? `${h.distance}m` : '—'}</Text>
-                      <Text style={[styles.holeChipPutts, { color: puttColour(h.putts) }]}>{h.putts}</Text>
+                      <Text style={[styles.holeChipPutts, { color: puttColour(h.strokes) }]}>{h.strokes}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
                 <Text style={styles.chipHint}>Tap a hole to change it</Text>
                 <View style={styles.previewRow}>
-                  <Text style={styles.proxPreview}>{puttingCourseLine(withPendingEdit(courseHoles))}</Text>
+                  <Text style={styles.proxPreview}>{courseLine(withPendingEdit(courseHoles))}</Text>
                   {editingHole === null && (
                     <TouchableOpacity onPress={() => setCourseHoles(prev => prev.slice(0, -1))} style={[styles.resetBtn, { marginRight: 6 }]}>
                       <Text style={styles.resetBtnText}>↶ Undo</Text>
@@ -1060,6 +1153,11 @@ const styles = StyleSheet.create({
   holeChipHole: { fontSize: 11, color: '#888', fontWeight: '700' },
   holeChipDist: { fontSize: 11, color: '#666' },
   holeChipPutts: { fontSize: 16, fontWeight: 'bold' },
+  lieRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  lieBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center', backgroundColor: '#fff' },
+  lieBtnActive: { backgroundColor: '#8d6e63', borderColor: '#8d6e63' },
+  lieBtnText: { fontSize: 15, fontWeight: '600', color: '#555' },
+  lieBtnTextActive: { color: '#fff' },
   holeChipSelected: { borderColor: '#1565C0', borderWidth: 2, backgroundColor: '#e3f2fd' },
   chipHint: { fontSize: 11, color: '#999', textAlign: 'center', marginTop: -4, marginBottom: 6 },
   courseHoleTitleEditing: { color: '#1565C0' },

@@ -85,6 +85,30 @@ export interface PuttingCourseHole {
   putts: number;
 }
 
+/** Where the ball lies for a Chipping Course hole. */
+export type ChipLie = 'Fairway' | 'Rough' | 'Bunker';
+
+/**
+ * One hole of a Chipping Course drill: chip from off the green and hole out, par 2 (up and down).
+ */
+export interface ChippingCourseHole {
+  hole: number;
+  distance: number | null;  // metres from the ball to the hole; null if not measured
+  lie: ChipLie;
+  strokes: number;          // strokes to hole out, chip included (1 = chip-in, 2 = up and down)
+}
+
+/**
+ * Shape the shared hole editor and the live session work with, for both course drills.
+ * Putting Course stores `putts`, Chipping Course stores `strokes` + `lie` — see the converters in constants/scoring.ts.
+ */
+export interface CourseEditorHole {
+  hole: number;
+  distance: number | null;
+  strokes: number;
+  lie?: ChipLie;
+}
+
 /**
  * Legacy proximity buckets — kept for backward compatibility
  */
@@ -110,6 +134,9 @@ export interface ProximityDrill {
   buckets?: ProximityBuckets;
   success: number;        // % of shots in center zone
   club?: string;
+  // Chipping Course: chip from off the green on every hole and hole out, par 2.
+  // attempts = holes; success = up-and-down % (holes in ≤ 2)
+  chipCourse?: ChippingCourseHole[];
 }
 
 /**
@@ -234,6 +261,8 @@ export interface DraftSession {
   proximityDrills: ProximityDrill[];
   // Holes of a Putting Course drill still being played (not yet added as a drill)
   pendingCourse?: PuttingCourseHole[];
+  // Holes of a Chipping Course still being played
+  pendingChipCourse?: ChippingCourseHole[];
   startedAt: string;
 }
 

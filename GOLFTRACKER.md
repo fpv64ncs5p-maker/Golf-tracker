@@ -1,6 +1,12 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-09-11** — **Chipping Course: o mesmo conceito do Putting Course, no Chipping — par 2 = up and down.** Ideia da Jo: em cada buraco chipar de fora do green e acabar o buraco, com distância e tipo de lie.
+  **Decisões da Jo:** lies **Fairway · Rough · Bunker** (Rough foi sugestão aceite); distância **até ao buraco** (não até à borda, ao contrário do Putting Course); por buraco só **strokes até acabar** (1 = chip-in, 2 = up and down) — sem "metros que sobraram" nem clube.
+  **Modelo:** `ChippingCourseHole { hole, distance, lie, strokes }`; guardado em `ProximityDrill.chipCourse` (sessões de Chipping gravam em `proximityDrills`), com `attempts` = buracos e `success` = **up-and-down %**. Rascunho: `DraftSession.pendingChipCourse`. Resumo `summarizeChippingCourse` / `chippingCourseLine`: strokes, ±par, up & down n/N (%), **sand saves** (bunker em ≤2), chip-ins, média de metros, e contagem por lie (`byLie`, ainda não mostrada).
+  **Partilhado com o Putting Course:** a sessão ao vivo e o editor passaram a trabalhar com um formato comum `CourseEditorHole { hole, distance, strokes, lie? }` e conversores (`puttingToEditor`/`editorToPutting`/`chippingToEditor`/`editorToChipping`) — o Putting Course continua a gravar `putts`. `components/PuttingCourseEditor.tsx` ficou genérico (props `summary`, `strokesLabel`, `distanceLabel`, `lies`); o nome do ficheiro manteve-se.
+  **Sessão:** toggle **🎯 Target drill / ⛳ Chipping Course**; botões de lie (o último escolhido fica para o buraco seguinte), metros até ao buraco, strokes 1–5+; chips mostram `H3 · BK`; tudo o resto igual ao Putting Course (tocar num buraco, ✏️ Edit holes, Undo, reabrir, resume). **Detalhe:** cartão com scorecard + lie, edição com lies, chip **⛳ Chipping Course** no + Add (sem seletor de clube). **Dashboard:** "⛳ Chipping Course N strokes (±par) · up & down X%"; fora da média "% on target". **Insights:** fora do typeScores de Chipping (o `success` mede outra coisa). Alvos adaptativos já filtravam `grid || buckets`.
+  tsc + eslint limpos; resumo testado. Não testado no browser.
 - **2026-09-11** — **Treinos, rondas e drills ordenados pela data em que foram jogados, não pela ordem em que foram registados (Jo reparou).** O Dashboard fazia só `.reverse()` da ordem gravada, por isso uma ronda de 2022 importada hoje aparecia no topo.
   **Decisão da Jo:** ordenar **os dados gravados** (não só as listas) — assim o handicap ("últimas 20 rondas", WHS) e os alvos adaptativos de chipping/pitching também passam a ser pela data real.
   **Implementação:** `sortByDate()` em `services/storage.ts` (estável: mesma data mantém a ordem de registo; data inválida vai para o início). `getSessions/getRounds/getRangeDrills` devolvem ordenado e `save*` grava ordenado, por isso o índice `length - 1 - index` do Dashboard e dos detalhes continua a apontar para o mesmo item. Não é preciso migração: os dados antigos ficam ordenados na leitura e gravam-se ordenados no próximo save.
@@ -185,6 +191,7 @@ app/
 - Manual drill entry: name, made, total → calculates success %
 - **Session notes** — free text field above "End & Save Session"
 - Notes shown on dashboard session cards with 📝 icon
+- **⛳ Chipping Course** (Chipping only) — toggle next to the target drill: per hole pick lie (Fairway/Rough/Bunker), metres to the hole, tap strokes to hole out (1–5+); par 2 (up and down); shows up & down % and sand saves; same edit/reopen/resume flow as the Putting Course
 - **⛳ Putting Course** (Putting only) — toggle next to the grid drill: per hole enter metres from the green's far edge + tap putts (1–5+); par 2/hole; undo; resumable; edit per hole in session detail
 - Saves to AsyncStorage under `sessions` key
 - Drills sourced from practice PDF (all distances in metres):

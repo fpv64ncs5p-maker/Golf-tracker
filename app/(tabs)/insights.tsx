@@ -79,7 +79,8 @@ export default function InsightsScreen() {
       });
       // Proximity drills
       s.proximityDrills?.forEach((d) => {
-        if (typeScores[s.type]) {
+        // Chipping Course success is up-and-down %, not % within target — not comparable here
+        if (typeScores[s.type] && !d.chipCourse) {
           typeScores[s.type].totalSuccess += d.success;
           typeScores[s.type].count++;
         }
