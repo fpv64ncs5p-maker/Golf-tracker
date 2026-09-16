@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions, getDraftSession, saveDraftSession, clearDraftSession } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, CourseEditorHole, ChipLie, PendingDrill } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, CourseEditorHole, ChipLie, PendingDrill, DraftSession } from '../types';
 import {
   PUTTS_PER_HOLE, PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine,
   CHIPPING_COURSE_NAME, CHIP_LIES, summarizeChippingCourse, chippingCourseLine,
@@ -215,12 +215,9 @@ export default function SessionScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  // Resume an autosaved session (launched from the Home resume banner)
-  useEffect(() => {
-    if (resume !== '1') return;
-    getDraftSession().then(draft => {
-      if (!draft) return;
-      setSeconds(draft.seconds);
+  // Put an autosaved session back on screen, exactly as it was left
+  const applyDraft = (draft: DraftSession) => {
+    setSeconds(draft.seconds);
       setNotes(draft.notes);
       setDrills(draft.drills ?? []);
       setProxDrills(draft.proximityDrills ?? []);
@@ -243,7 +240,37 @@ export default function SessionScreen() {
         setOverrideThreshold(p.overrideThreshold ?? null);
         setCourseDistance(p.courseDistance ?? '');
         if (p.courseLie) setCourseLie(p.courseLie);
-        if (p.mode) setDrillMode(p.mode);
+      if (p.mode) setDrillMode(p.mode);
+    }
+  };
+
+  // Resume from the Home banner; otherwise offer to resume before overwriting an unfinished session
+  useEffect(() => {
+    getDraftSession().then(draft => {
+      if (!draft) return;
+      if (resume === '1') { applyDraft(draft); return; }
+      const drillCount = (draft.drills?.length ?? 0) + (draft.proximityDrills?.length ?? 0);
+      const holes = (draft.pendingCourse?.length ?? 0) + (draft.pendingChipCourse?.length ?? 0);
+      const bits = [
+        drillCount > 0 ? `${drillCount} drill${drillCount === 1 ? '' : 's'}` : null,
+        holes > 0 ? `${holes} course hole${holes === 1 ? '' : 's'}` : null,
+        draft.pendingDrill ? 'a drill being counted' : null,
+      ].filter(Boolean).join(', ');
+      if (!bits) return; // nothing worth keeping
+      const sameType = draft.type === sessionType;
+      const openOther = () => router.replace({ pathname: '/session', params: { type: draft.type, resume: '1' } });
+      const msg = sameType
+        ? `You have an unfinished ${draft.type} session (${bits}). Resume it? Starting a new one discards it.`
+        : `You have an unfinished ${draft.type} session (${bits}). Open that one instead? Continuing here discards it.`;
+      const keep = () => (sameType ? applyDraft(draft) : openOther());
+      if (Platform.OS === 'web') {
+        if (window.confirm(msg)) keep();
+        else clearDraftSession();
+      } else {
+        Alert.alert('Unfinished session', msg, [
+          { text: sameType ? 'Start new' : 'Discard it', style: 'destructive', onPress: () => clearDraftSession() },
+          { text: sameType ? 'Resume' : 'Open it', onPress: keep },
+        ]);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

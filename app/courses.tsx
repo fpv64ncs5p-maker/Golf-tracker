@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
-import { getCourses, saveCourses, getRounds } from '../services/storage';
+import {
+  getCourses, saveCourses, getRounds,
+  getDraftCourseEdit, saveDraftCourseEdit, clearDraftCourseEdit,
+} from '../services/storage';
 import type { Course, Round } from '../types';
 import { TEE_COLOUR_MAP } from '../constants/theme';
 import { groupCourses, COUNTRY_FLAG } from '../services/courseGroups';
@@ -63,6 +66,8 @@ export default function CoursesScreen() {
   const [teeB9Rating, setTeeB9Rating] = useState('');
   const [teeB9Slope, setTeeB9Slope] = useState('');
   const [showNineRatings, setShowNineRatings] = useState(false);
+  // Name of the form restored from an unfinished edit (shown as a banner)
+  const [restoredEdit, setRestoredEdit] = useState<string | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadCourses(); loadRounds(); }, []); // run once on mount
@@ -135,7 +140,7 @@ export default function CoursesScreen() {
     if (expandedCourse === courseId) setExpandedCourse(null);
   };
 
-  const startEditTee = (course: Course, teeName: string) => {
+  const startEditTee = async (course: Course, teeName: string) => {
     const existing = course.tees[teeName] || {};
     setEditingTee({ courseId: course.id, teeName });
     setTeePar(existing.par?.toString() || '');
@@ -146,7 +151,46 @@ export default function CoursesScreen() {
     setTeeB9Rating(existing.back9?.rating?.toString() || '');
     setTeeB9Slope(existing.back9?.slope?.toString() || '');
     setShowNineRatings(!!(existing.front9?.rating || existing.back9?.rating));
+    // An unfinished edit of this tee wins — it is newer than what was saved
+    const draft = await getDraftCourseEdit(course.id, teeName);
+    if (draft?.tee) {
+      setTeePar(draft.tee.par);
+      setTeeRating(draft.tee.rating);
+      setTeeSlope(draft.tee.slope);
+      setTeeF9Rating(draft.tee.f9Rating);
+      setTeeF9Slope(draft.tee.f9Slope);
+      setTeeB9Rating(draft.tee.b9Rating);
+      setTeeB9Slope(draft.tee.b9Slope);
+      setShowNineRatings(draft.tee.showNineRatings);
+      setRestoredEdit(`${course.name} · ${teeName}`);
+    }
   };
+
+  // Autosave the open tee form, so a screen-off doesn't cost the ratings typed
+  useEffect(() => {
+    if (!editingTee) return;
+    saveDraftCourseEdit({
+      courseId: editingTee.courseId,
+      teeName: editingTee.teeName,
+      tee: {
+        par: teePar, rating: teeRating, slope: teeSlope,
+        f9Rating: teeF9Rating, f9Slope: teeF9Slope,
+        b9Rating: teeB9Rating, b9Slope: teeB9Slope,
+        showNineRatings,
+      },
+      savedAt: new Date().toISOString(),
+    });
+  }, [editingTee, teePar, teeRating, teeSlope, teeF9Rating, teeF9Slope, teeB9Rating, teeB9Slope, showNineRatings]);
+
+  // Same for the 18-hole table
+  useEffect(() => {
+    if (!editingHoles) return;
+    saveDraftCourseEdit({
+      courseId: editingHoles,
+      holes: holeInputs,
+      savedAt: new Date().toISOString(),
+    });
+  }, [editingHoles, holeInputs]);
 
   const resetTeeInputs = () => {
     setTeePar(''); setTeeRating(''); setTeeSlope('');
@@ -182,12 +226,17 @@ export default function CoursesScreen() {
       };
     });
     await updateAndSaveCourses(updated);
+    await clearDraftCourseEdit(editingTee.courseId, editingTee.teeName);
     setEditingTee(null);
+    setRestoredEdit(null);
     resetTeeInputs();
   };
 
   const cancelEdit = () => {
+    // Cancelling is a deliberate "throw this away" — drop the draft too
+    if (editingTee) clearDraftCourseEdit(editingTee.courseId, editingTee.teeName);
     setEditingTee(null);
+    setRestoredEdit(null);
     resetTeeInputs();
   };
 
@@ -204,6 +253,12 @@ export default function CoursesScreen() {
     });
     setHoleInputs(inputs);
     setEditingHoles(course.id);
+    getDraftCourseEdit(course.id).then(draft => {
+      if (draft?.holes?.length) {
+        setHoleInputs(draft.holes);
+        setRestoredEdit(`${course.name} · holes`);
+      }
+    });
   };
 
   const updateHoleInput = (holeIndex: number, field: 'par' | 'distance' | 'si', value: string | number) => {
@@ -224,7 +279,9 @@ export default function CoursesScreen() {
       return { ...c, holes };
     });
     await updateAndSaveCourses(updated);
+    if (editingHoles) await clearDraftCourseEdit(editingHoles);
     setEditingHoles(null);
+    setRestoredEdit(null);
   };
 
   const getHoleSummary = (course: Course) => {
@@ -246,6 +303,12 @@ export default function CoursesScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>⛳ My Courses</Text>
+
+        {restoredEdit && (
+          <View style={styles.restoredBanner}>
+            <Text style={styles.restoredText}>↺ Restored your unfinished edit — {restoredEdit}</Text>
+          </View>
+        )}
 
         {/* Country tabs */}
         {countries.length > 1 && (
@@ -627,6 +690,8 @@ export default function CoursesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, backgroundColor: '#fff' },
   backBtn: { marginBottom: 4, marginTop: 4 },
+  restoredBanner: { backgroundColor: '#fff8e1', borderWidth: 1, borderColor: '#ffca28', borderRadius: 10, padding: 10, marginBottom: 12 },
+  restoredText: { fontSize: 13, color: '#8d6e00', fontWeight: '600' },
   backText: { fontSize: 15, color: '#4CAF50', fontWeight: '600' },
   title: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginTop: 10, marginBottom: 16 },
   empty: { textAlign: 'center', color: '#999', marginTop: 20, fontSize: 15, marginBottom: 20 },

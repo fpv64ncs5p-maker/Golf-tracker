@@ -16,6 +16,8 @@ import type {
   DraftSession,
   RangeDrill,
   DraftRangeDrill,
+  DraftImport,
+  DraftCourseEdit,
 } from '../types';
 
 // ── Generic Supabase helpers ────────────────────────────────────────────────
@@ -175,6 +177,48 @@ export async function clearDraftRound(): Promise<void> {
     console.error('[Storage] Error clearing draft round:', error);
   }
 }
+
+// ── Draft Import / Draft Course Edit (local, transient) ──────────────────────
+// Unfinished forms, so a screen-off never costs typing.
+
+async function getLocal<T>(key: string): Promise<T | null> {
+  try {
+    const value = await AsyncStorage.getItem(key);
+    return value === null ? null : (JSON.parse(value) as T);
+  } catch {
+    return null;
+  }
+}
+
+async function saveLocal<T>(key: string, value: T): Promise<void> {
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`[Storage] Error saving "${key}":`, error);
+  }
+}
+
+async function clearLocal(key: string): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(key);
+  } catch (error) {
+    console.error(`[Storage] Error clearing "${key}":`, error);
+  }
+}
+
+export const getDraftImport = () => getLocal<DraftImport>('draftImport');
+export const saveDraftImport = (draft: DraftImport) => saveLocal('draftImport', draft);
+export const clearDraftImport = () => clearLocal('draftImport');
+
+// Course edits are keyed per course (and per tee) so two half-finished forms don't collide.
+const courseEditKey = (courseId: string, teeName?: string) =>
+  `draftCourseEdit:${courseId}:${teeName ?? 'holes'}`;
+export const getDraftCourseEdit = (courseId: string, teeName?: string) =>
+  getLocal<DraftCourseEdit>(courseEditKey(courseId, teeName));
+export const saveDraftCourseEdit = (draft: DraftCourseEdit) =>
+  saveLocal(courseEditKey(draft.courseId, draft.teeName), draft);
+export const clearDraftCourseEdit = (courseId: string, teeName?: string) =>
+  clearLocal(courseEditKey(courseId, teeName));
 
 // ── Draft Session (stays local — transient data) ─────────────────────────────
 

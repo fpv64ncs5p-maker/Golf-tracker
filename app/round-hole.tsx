@@ -59,6 +59,8 @@ export default function RoundHoleScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  // True once this hole's saved/pending data has been loaded — guards the autosave below
+  const [hydrated, setHydrated] = useState(false);
   const [putts, setPutts] = useState(0);
   const [puttDirection, setPuttDirection] = useState<string | null>(null);
 
@@ -70,6 +72,7 @@ export default function RoundHoleScreen() {
   // Load hole data — par/distance from course setup, strokes/putts if going back
   useEffect(() => {
     // Reset state for the new hole
+    setHydrated(false);
     setStrokes([]);
     setPutts(0);
     setPuttDirection(null);
@@ -110,9 +113,37 @@ export default function RoundHoleScreen() {
         setPutts(saved.putts || 0);
         setPar(saved.par || holeInfo?.par || 4);
       }
+
+      // Anything entered for this hole but not saved yet wins — it is the newest.
+      const pending = round.currentHole;
+      if (pending && pending.hole === hole) {
+        setStrokes(pending.strokes || []);
+        setPutts(pending.putts || 0);
+        setPuttDirection(pending.puttDirection ?? null);
+        if (pending.par) setPar(pending.par);
+      }
+      setHydrated(true);
     };
     loadHoleData();
   }, [hole, total]);
+
+  // Autosave the hole being played, so an interruption mid-hole costs nothing.
+  useEffect(() => {
+    if (!hydrated) return;
+    const save = async () => {
+      const draft = await getDraftRound();
+      if (!draft) return;
+      const empty = strokes.length === 0 && putts === 0;
+      // Only ever clear a pending hole that is this one — never another hole's.
+      const keep = draft.currentHole?.hole === hole ? undefined : draft.currentHole;
+      await saveDraftRound({
+        ...draft,
+        currentHole: empty ? keep : { hole, par, strokes, putts, puttDirection },
+      });
+    };
+    save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, strokes, putts, puttDirection, par]);
 
   const isTeeShotNext = strokes.length === 0;
   const targetLabel = isTeeShotNext ? (par === 3 ? 'Green' : 'Fairway') : 'On Target';
@@ -178,6 +209,7 @@ export default function RoundHoleScreen() {
     // Upsert: replace existing entry for this hole if going back and re-saving
     const existing = (round.holeData || []).filter(h => h.hole !== hole);
     round.holeData = [...existing, holeData].sort((a, b) => a.hole - b.hole);
+    round.currentHole = undefined; // it is a saved hole now
     await saveDraftRound(round);
 
     // Advance to the next hole with no score yet, wrapping past the end of the list.

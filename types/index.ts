@@ -246,7 +246,43 @@ export interface Round {
  */
 export type DraftRound = Round & {
   courseHoles: HoleDefinition[];
+  // The hole being played right now, saved on every stroke so an interruption
+  // costs nothing. Cleared when the hole is saved with "Save hole & continue".
+  currentHole?: InProgressHole;
 };
+
+/** Strokes and putts entered for a hole that hasn't been saved yet. */
+export interface InProgressHole {
+  hole: number;
+  par: number;
+  strokes: Stroke[];
+  putts: number;
+  puttDirection?: string | null;
+}
+
+/** An unfinished "Import a round" form, autosaved so the typed card survives an interruption. */
+export interface DraftImport {
+  courseId: string | null;
+  tee: string | null;
+  date: string;
+  totalHoles: 9 | 18;
+  nineHalf: 'front' | 'back';
+  scores: { strokes: string; putts: string }[];
+  savedAt: string;
+}
+
+/** An unfinished course-editor form (tee ratings or the hole table), autosaved per course. */
+export interface DraftCourseEdit {
+  courseId: string;
+  teeName?: string;                       // set for a tee form
+  tee?: {
+    par: string; rating: string; slope: string;
+    f9Rating: string; f9Slope: string; b9Rating: string; b9Slope: string;
+    showNineRatings: boolean;
+  };
+  holes?: { hole: number; par: number; distance: string; si: string }[];
+  savedAt: string;
+}
 
 /**
  * The drill being counted when the session was interrupted — everything the
@@ -337,6 +373,8 @@ export interface DraftRangeDrill {
   notes: string;
   puttsPerHole?: number;           // frozen at start (see RangeDrill)
   puttsSampleHoles?: number;
+  // Club picked and distance typed but not added as a shot yet
+  pendingShot?: { club: string | null; distance: string };
   startedAt: string;               // ISO timestamp, used for the resume banner
 }
 

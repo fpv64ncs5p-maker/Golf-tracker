@@ -95,7 +95,8 @@ export default function RangeDrillScreen() {
   // `seconds` is intentionally excluded from deps to avoid writing every tick — it's
   // captured at each save point, which is close enough to resume from.
   useEffect(() => {
-    if (phase !== 'active' || !selectedCourse) return;
+    // Also saves on the Complete screen, so notes typed there survive an interruption
+    if ((phase !== 'active' && phase !== 'complete') || !selectedCourse) return;
     saveDraftRangeDrill({
       course: selectedCourse,
       tee: selectedTee ?? undefined,
@@ -107,10 +108,11 @@ export default function RangeDrillScreen() {
       notes,
       puttsPerHole: drillPutts.perHole,
       puttsSampleHoles: drillPutts.sample,
+      pendingShot: (selectedClub || distanceInput) ? { club: selectedClub, distance: distanceInput } : undefined,
       startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, selectedCourse, selectedHoles, holeIndex, completedHoles, currentShots, drillPutts]);
+  }, [phase, selectedCourse, selectedHoles, holeIndex, completedHoles, currentShots, drillPutts, notes, selectedClub, distanceInput]);
 
   // Start timer when drill becomes active
   useEffect(() => {
@@ -157,8 +159,8 @@ export default function RangeDrillScreen() {
     setDrillPutts(draft.puttsPerHole != null
       ? { perHole: draft.puttsPerHole, sample: draft.puttsSampleHoles }
       : puttAvg ? { perHole: puttAvg.puttsPerHole, sample: puttAvg.holes } : { perHole: PUTTS_PER_HOLE });
-    setSelectedClub(null);
-    setDistanceInput('');
+    setSelectedClub(draft.pendingShot?.club ?? null);
+    setDistanceInput(draft.pendingShot?.distance ?? '');
     setDraft(null);
     setPhase('active');
   };

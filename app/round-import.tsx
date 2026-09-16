@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
-import { getCourses, saveRounds, getRounds } from '../services/storage';
+import { getCourses, saveRounds, getRounds, getDraftImport, saveDraftImport, clearDraftImport } from '../services/storage';
 import type { Course, Round, HoleData, RoundStats } from '../types';
 import { ratingForPlay } from '../services/rating';
 
@@ -14,19 +14,67 @@ export default function RoundImportScreen() {
   const [nineHalfSelection, setNineHalfSelection] = useState<'front' | 'back'>('front');
   const [scores, setScores] = useState<{ strokes: string; putts: string }[]>([]);
   const [saved, setSaved] = useState(false);
+  // An unfinished card restored from the draft (shown as a banner until dismissed)
+  const [restored, setRestored] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  // Scores waiting to be applied after the course/hole-count reset effect runs
+  const restoredScores = useRef<{ strokes: string; putts: string }[] | null>(null);
 
   useEffect(() => {
     const load = async () => {
       const data = await getCourses();
       setCourses(data);
+      // Bring back an unfinished import, if there is one
+      const draft = await getDraftImport();
+      if (draft) {
+        restoredScores.current = draft.scores;
+        setSelectedCourse(data.find(c => c.id === draft.courseId) ?? null);
+        setSelectedTee(draft.tee);
+        setDate(draft.date);
+        setTotalHoles(draft.totalHoles);
+        setNineHalfSelection(draft.nineHalf);
+        setRestored(true);
+      }
+      setHydrated(true);
     };
     load();
   }, []);
 
-  // Reset holes when course/tee/count changes
+  // Reset holes when course/tee/count changes — unless a restored card is waiting
   useEffect(() => {
+    if (restoredScores.current) {
+      setScores(restoredScores.current);
+      restoredScores.current = null;
+      return;
+    }
     setScores(Array.from({ length: totalHoles }, () => ({ strokes: '', putts: '' })));
   }, [totalHoles, selectedCourse]);
+
+  // Autosave the typed card so an interruption doesn't cost the whole scorecard
+  useEffect(() => {
+    if (!hydrated || saved) return;
+    const typed = scores.some(s => s.strokes.trim() || s.putts.trim());
+    if (!typed && !selectedCourse) return;
+    saveDraftImport({
+      courseId: selectedCourse?.id ?? null,
+      tee: selectedTee,
+      date,
+      totalHoles,
+      nineHalf: nineHalfSelection,
+      scores,
+      savedAt: new Date().toISOString(),
+    });
+  }, [hydrated, saved, scores, selectedCourse, selectedTee, date, totalHoles, nineHalfSelection]);
+
+  const startFresh = () => {
+    clearDraftImport();
+    restoredScores.current = null;
+    setRestored(false);
+    setSelectedCourse(null);
+    setSelectedTee(null);
+    setDate(new Date().toLocaleDateString('en-GB'));
+    setScores(Array.from({ length: totalHoles }, () => ({ strokes: '', putts: '' })));
+  };
 
   const teeData = selectedCourse?.tees?.[selectedTee ?? ''];
   const courseHoles = selectedCourse?.holes || [];
@@ -153,6 +201,7 @@ export default function RoundImportScreen() {
     const rounds = await getRounds();
     rounds.push(round);
     await saveRounds(rounds);
+    await clearDraftImport();
     setSaved(true);
     setTimeout(() => router.replace('/dashboard'), 1000);
   };
@@ -165,6 +214,15 @@ export default function RoundImportScreen() {
       </TouchableOpacity>
       <Text style={styles.title}>📥 Import Round</Text>
       <Text style={styles.subtitle}>Enter scores from a previous round</Text>
+
+      {restored && (
+        <View style={styles.restoredBanner}>
+          <Text style={styles.restoredText}>↺ Restored the card you had started</Text>
+          <TouchableOpacity onPress={startFresh}>
+            <Text style={styles.restoredBtn}>✕ Start fresh</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Course selection */}
       <Text style={styles.sectionTitle}>Course</Text>
@@ -365,6 +423,9 @@ const styles = StyleSheet.create({
   teeCR: { fontSize: 10, color: '#888', marginTop: 2 },
   teeRatingNote: { fontSize: 11, color: '#888', marginTop: 4, marginLeft: 2 },
 
+  restoredBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff8e1', borderWidth: 1, borderColor: '#ffca28', borderRadius: 10, padding: 10, marginBottom: 12 },
+  restoredText: { fontSize: 13, color: '#8d6e00', fontWeight: '600', flex: 1 },
+  restoredBtn: { fontSize: 13, color: '#8d6e00', fontWeight: '700' },
   dateInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 16, backgroundColor: '#fafafa' },
 
   holesRow: { flexDirection: 'row', gap: 12 },

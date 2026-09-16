@@ -52,7 +52,8 @@ export default function RoundCompleteScreen() {
   const saveRound = async () => {
     if (!round) return;
     const stats = calcStats();
-    const finalRound = { ...round, notes, stats } as Round;
+    const { currentHole: _pending, ...roundFields } = round as typeof round & { currentHole?: unknown };
+    const finalRound = { ...roundFields, notes, stats } as Round;
     const rounds = await getRounds();
     rounds.push(finalRound);
     await saveRounds(rounds);
