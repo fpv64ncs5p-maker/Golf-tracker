@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { getSessions, saveSessions, getDraftSession, saveDraftSession, clearDraftSession } from '../services/storage';
-import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, CourseEditorHole, ChipLie } from '../types';
+import type { PracticeSession, Drill, ProximityDrill, DirectionGrid, ProximityBuckets, CourseEditorHole, ChipLie, PendingDrill } from '../types';
 import {
   PUTTS_PER_HOLE, PUTTING_COURSE_NAME, summarizePuttingCourse, puttingCourseLine,
   CHIPPING_COURSE_NAME, CHIP_LIES, summarizeChippingCourse, chippingCourseLine,
@@ -231,6 +231,20 @@ export default function SessionScreen() {
         setCourseHoles(chippingToEditor(draft.pendingChipCourse));
         setDrillMode('course');
       }
+      // The drill that was still being counted — back exactly as it was
+      const p = draft.pendingDrill;
+      if (p) {
+        setDrillName(p.name ?? '');
+        setProxClub(p.club ?? null);
+        if (p.buckets) setBuckets(p.buckets);
+        if (p.grid) setGrid(p.grid);
+        setMade(p.made ?? '');
+        setAttempts(p.attempts ?? '');
+        setOverrideThreshold(p.overrideThreshold ?? null);
+        setCourseDistance(p.courseDistance ?? '');
+        if (p.courseLie) setCourseLie(p.courseLie);
+        if (p.mode) setDrillMode(p.mode);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once on mount
@@ -238,7 +252,20 @@ export default function SessionScreen() {
   // Autosave the committed drills + notes so an interrupted session can be resumed.
   // `seconds` is captured at each save point but excluded from deps (no per-tick writes).
   useEffect(() => {
-    if (drills.length === 0 && proxDrills.length === 0 && courseHoles.length === 0 && !notes.trim()) return;
+    const hasPendingDrill = !!drillName || gridTotal > 0 || bucketTotal > 0 || !!made || !!attempts || !!courseDistance;
+    if (drills.length === 0 && proxDrills.length === 0 && courseHoles.length === 0 && !notes.trim() && !hasPendingDrill) return;
+    const pendingDrill: PendingDrill | undefined = hasPendingDrill ? {
+      name: drillName,
+      club: proxClub ?? undefined,
+      buckets: bucketTotal > 0 ? buckets : undefined,
+      grid: gridTotal > 0 ? grid : undefined,
+      made: made || undefined,
+      attempts: attempts || undefined,
+      overrideThreshold,
+      mode: drillMode,
+      courseDistance: courseDistance || undefined,
+      courseLie: courseKind === 'chipping' ? courseLie : undefined,
+    } : undefined;
     saveDraftSession({
       type: sessionType,
       seconds,
@@ -247,10 +274,11 @@ export default function SessionScreen() {
       proximityDrills: proxDrills,
       pendingCourse: courseKind === 'putting' && courseHoles.length ? editorToPutting(courseHoles) : undefined,
       pendingChipCourse: courseKind === 'chipping' && courseHoles.length ? editorToChipping(courseHoles) : undefined,
+      pendingDrill,
       startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drills, proxDrills, notes, courseHoles]);
+  }, [drills, proxDrills, notes, courseHoles, drillName, buckets, grid, made, attempts, proxClub, overrideThreshold, drillMode, courseDistance, courseLie]);
 
   // Load adaptive level for chipping/pitching
   useEffect(() => {

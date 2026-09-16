@@ -1,6 +1,10 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-09-16** — **Sessão de chipping perdeu as contagens quando o ecrã se apagou (Jo apanhou).** O autosave da sessão só guardava os drills **já adicionados** (+ notas e buracos de percurso); o drill a ser contado vivia só no estado do ecrã, por isso ao voltar ficou tudo a zero. Os dados desse dia **não são recuperáveis** — nunca chegaram a ser gravados (Supabase não é acessível nem do container nem da VM do Mac, por egress).
+  **Decisão da Jo:** gravar tudo (opção A).
+  **Correção:** novo `DraftSession.pendingDrill` (`PendingDrill`: `name`, `club`, `buckets`, `grid`, `made`/`attempts`, `overrideThreshold`, `mode`, `courseDistance`, `courseLie`). O efeito de autosave passou a depender também destes estados e grava sempre que houver algo por contar; o resume repõe tudo, incluindo o modo (drill/course) e a lie/metros do buraco em curso. `seconds` continua fora das dependências (sem escrita por tick).
+  tsc + eslint limpos. Não testado no browser.
 - **2026-09-11** — **"Short game on course": o Putting Course e o Chipping Course passam a contar.** Ideia da Jo: são o mais próximo de uma ronda real (cada buraco parte de uma situação real), por isso devem dizer se precisa de chipping e de onde, e como está o putting e a partir de que distâncias.
   **Decisões da Jo:** mostrar **nos dois sítios** (resumo no Dashboard, detalhe nos Insights); **alimenta a recomendação** com o ponto mais fraco (mínimo 5 buracos); janela **últimos 45 buracos + tendência** vs os 45 anteriores.
   **Análise (`services/shortGame.ts`, `analyzeShortGame(sessions)`):** ordena as sessões por data (o Dashboard guarda-as ao contrário). **Putting:** média de putts/buraco, 1-putt %, 3-putt %, e por distância do 1.º putt (desde a borda) **< 5 · 5–10 · 10–15 · 15 m+**; tendência na média (±0.1). **Chipping:** up & down %, média de strokes, **por lie** (Fairway/Rough/Bunker) e **por distância ao buraco** **< 5 · 5–10 · 10–20 · 20 m+**; tendência no up & down (±5 pts). Tendência só com ≥9 buracos na janela anterior.

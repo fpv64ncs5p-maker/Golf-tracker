@@ -249,9 +249,27 @@ export type DraftRound = Round & {
 };
 
 /**
+ * The drill being counted when the session was interrupted — everything the
+ * input area holds before "+ Add Drill" commits it. Saved so a screen-off
+ * never costs taps.
+ */
+export interface PendingDrill {
+  name: string;
+  club?: string;
+  buckets?: ProximityBuckets;      // Chipping target drill
+  grid?: DirectionGrid;            // Putting / Pitching grid drill
+  made?: string;                   // Long Game / Short Game
+  attempts?: string;
+  overrideThreshold?: number | null; // manually picked chipping target
+  mode?: 'drill' | 'course';       // which mode the screen was in (Putting/Chipping)
+  courseDistance?: string;         // metres typed for the hole in progress
+  courseLie?: ChipLie;             // lie chosen for the next Chipping Course hole
+}
+
+/**
  * An in-progress practice session, autosaved locally so it can be resumed
- * after an interruption. Holds the committed drills + timer + notes (not the
- * half-entered current drill inputs).
+ * after an interruption. Holds the committed drills, the drill still being
+ * counted (`pendingDrill`), the timer and the notes.
  */
 export interface DraftSession {
   type: string;
@@ -263,6 +281,8 @@ export interface DraftSession {
   pendingCourse?: PuttingCourseHole[];
   // Holes of a Chipping Course still being played
   pendingChipCourse?: ChippingCourseHole[];
+  // The drill still being counted when the session was interrupted
+  pendingDrill?: PendingDrill;
   startedAt: string;
 }
 
