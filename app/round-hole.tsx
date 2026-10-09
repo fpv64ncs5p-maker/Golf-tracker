@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { getDraftRound, saveDraftRound, getClubDistances, clearDraftRound } from '../services/storage';
 import type { Stroke, HoleData, ClubDistance } from '../types';
 import { CLUBS as BAG, loftsFrom, withLoft } from '../data/clubs';
+import { buildGuide, pickAdvice, type GuideRow } from '../services/caddie';
 
 // The shared bag plus 3i and the putter, which only rounds use
 const CLUBS = [...BAG.slice(0, 5), '3i', ...BAG.slice(5), 'Putter'];
@@ -12,7 +13,7 @@ const PENALTY_TYPES = ['Water', 'OB', 'Hazard', 'Other'];
 const PUTT_DIRECTIONS = ['Short', 'Long', 'Left', 'Right'];
 
 // Personal yardage guide (from My Bag Reference spreadsheet, Jan 2026)
-const YARDAGE_GUIDE = [
+const YARDAGE_GUIDE: GuideRow[] = [
   { min: 0,   max: 44,  club: 'SW', swing: 100, label: 'SW (bump & run)',  alt: 'PW (chip)',    note: 'Keep it low and rolling' },
   { min: 45,  max: 52,  club: 'SW', swing: 100, label: 'SW full',          alt: 'PW ½',         note: 'Perfect for short par-3 holes' },
   { min: 53,  max: 60,  club: 'SW', swing: 85,  label: 'SW ¾',             alt: 'PW ½',         note: 'Controlled landing, reliable' },
@@ -250,12 +251,8 @@ export default function RoundHoleScreen() {
   // Caddie: use personal yardage guide for hole distance
   const getCaddieAdvice = () => {
     if (!holeDistance) return null;
-    const match = YARDAGE_GUIDE.find(g => holeDistance >= g.min && holeDistance <= g.max);
-    if (!match) return null;
-    // Also get one entry lower as lay-up option
-    const matchIdx = YARDAGE_GUIDE.indexOf(match);
-    const layup = matchIdx > 0 ? YARDAGE_GUIDE[matchIdx - 1] : null;
-    return { match, layup };
+    // Jo's guide + GW/LW rows built from their Clubs tab carry (services/caddie.ts)
+    return pickAdvice(buildGuide(YARDAGE_GUIDE, clubDistances, lofts), holeDistance);
   };
 
   const openMenu = () => {
