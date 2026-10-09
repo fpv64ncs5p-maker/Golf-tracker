@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { getDraftRound, saveDraftRound, getClubDistances, clearDraftRound } from '../services/storage';
+import { getDraftRound, saveDraftRound, getClubDistances, clearDraftRound, getRounds } from '../services/storage';
 import type { Stroke, HoleData, ClubDistance } from '../types';
 import { CLUBS as BAG, loftsFrom, withLoft } from '../data/clubs';
-import { buildGuide, pickAdvice, type GuideRow } from '../services/caddie';
+import { buildOptions, pickAdvice, aimTip, parseLCR, roundDirections, type LCR } from '../services/caddie';
 
 // The shared bag plus 3i and the putter, which only rounds use
 const CLUBS = [...BAG.slice(0, 5), '3i', ...BAG.slice(5), 'Putter'];
@@ -12,22 +12,8 @@ const CLUBS = [...BAG.slice(0, 5), '3i', ...BAG.slice(5), 'Putter'];
 const PENALTY_TYPES = ['Water', 'OB', 'Hazard', 'Other'];
 const PUTT_DIRECTIONS = ['Short', 'Long', 'Left', 'Right'];
 
-// Personal yardage guide (from My Bag Reference spreadsheet, Jan 2026)
-const YARDAGE_GUIDE: GuideRow[] = [
-  { min: 0,   max: 44,  club: 'SW', swing: 100, label: 'SW (bump & run)',  alt: 'PW (chip)',    note: 'Keep it low and rolling' },
-  { min: 45,  max: 52,  club: 'SW', swing: 100, label: 'SW full',          alt: 'PW ½',         note: 'Perfect for short par-3 holes' },
-  { min: 53,  max: 60,  club: 'SW', swing: 85,  label: 'SW ¾',             alt: 'PW ½',         note: 'Controlled landing, reliable' },
-  { min: 61,  max: 68,  club: 'PW', swing: 100, label: 'PW full',          alt: 'SW (punch)',   note: 'Scoring zone – be precise' },
-  { min: 69,  max: 75,  club: 'PW', swing: 85,  label: 'PW ¾',             alt: '9i ½',         note: 'Smooth swing = better direction' },
-  { min: 76,  max: 83,  club: '9i', swing: 100, label: '9i full',          alt: 'PW ¾',         note: '⚠️ 9i goes right — aim left of target' },
-  { min: 84,  max: 90,  club: '9i', swing: 85,  label: '9i ¾',             alt: '8i ½',         note: 'Into headwind: use 8i instead' },
-  { min: 91,  max: 98,  club: '7i', swing: 100, label: '7i full',          alt: '8i full',      note: 'Perfect distance, aim center' },
-  { min: 99,  max: 107, club: '7i', swing: 85,  label: '7i ¾',             alt: '6i full',      note: 'Aim for middle of green' },
-  { min: 108, max: 115, club: '6i', swing: 90,  label: '6i / 5i 90%',     alt: '5W half',      note: 'Uphill (e.g. Campo Real): add 1 club' },
-  { min: 116, max: 130, club: '4H', swing: 90,  label: '4H / Hybrid 90%', alt: '5i full',      note: 'Aim short if green is above you' },
-  { min: 131, max: 145, club: '5W', swing: 90,  label: '5W 90%',           alt: '4H',           note: 'Land short, let it roll' },
-  { min: 146, max: 999, club: '5W', swing: 100, label: '5W full',          alt: '4H full',      note: 'Maximum distance — commit fully' },
-];
+// Caddie: built from the Clubs tab (Trackman carries) — see services/caddie.ts.
+// The fixed yardage table from the Jan 2026 spreadsheet was removed on 2026-10-09.
 
 // Personal mental rules (from My Bag Reference spreadsheet)
 const MENTAL_RULES = [
@@ -55,6 +41,8 @@ export default function RoundHoleScreen() {
   const [holeNumbers, setHoleNumbers] = useState<number[]>([]);
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
   const lofts = loftsFrom(clubDistances);
+  // Direction per club from saved rounds — feeds the caddie's aim tip
+  const [roundDirs, setRoundDirs] = useState<Record<string, LCR>>({});
   const [showRules, setShowRules] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -83,6 +71,7 @@ export default function RoundHoleScreen() {
     const loadHoleData = async () => {
       const distData = await getClubDistances();
       setClubDistances(distData);
+      getRounds().then(rs => setRoundDirs(roundDirections(rs))).catch(() => {});
 
       const draft = await getDraftRound();
       if (!draft) return;
@@ -251,8 +240,12 @@ export default function RoundHoleScreen() {
   // Caddie: use personal yardage guide for hole distance
   const getCaddieAdvice = () => {
     if (!holeDistance) return null;
-    // Jo's guide + GW/LW rows built from their Clubs tab carry (services/caddie.ts)
-    return pickAdvice(buildGuide(YARDAGE_GUIDE, clubDistances, lofts), holeDistance);
+    const advice = pickAdvice(buildOptions(clubDistances, lofts), holeDistance);
+    if (!advice) return null;
+    const { best, alt, layup } = advice;
+    const tip = aimTip(parseLCR(clubDistances[best.club]?.direction), roundDirs[best.club]);
+    const note = [tip, clubDistances[best.club]?.note].filter(Boolean).join(' · ');
+    return { match: { ...best, alt: alt?.label ?? '', note }, layup };
   };
 
   const openMenu = () => {
@@ -286,7 +279,7 @@ export default function RoundHoleScreen() {
   const caddieAdvice = getCaddieAdvice();
   // Keep caddieClub for club picker highlighting (backwards compat)
   const caddieClub = caddieAdvice ? {
-    best: { club: caddieAdvice.match.club, carry: parseInt(clubDistances[caddieAdvice.match.club]?.carry) || 0 },
+    best: { club: caddieAdvice.match.club, carry: caddieAdvice.match.target },
     conservative: caddieAdvice.layup ? { club: caddieAdvice.layup.club, carry: parseInt(clubDistances[caddieAdvice.layup.club]?.carry) || 0 } : null,
   } : null;
 
@@ -414,10 +407,10 @@ export default function RoundHoleScreen() {
             <View style={styles.caddieClubBadge}>
               <Text style={styles.caddieClubName}>{caddieAdvice.match.label}</Text>
               {caddieClub?.best.carry ? (
-                <Text style={styles.caddieClubDist}>{caddieClub.best.carry}m carry</Text>
+                <Text style={styles.caddieClubDist}>{caddieClub.best.carry}m {caddieAdvice.match.full ? 'carry' : '(¾ carry)'}</Text>
               ) : null}
             </View>
-            {caddieAdvice.match.alt && (
+            {!!caddieAdvice.match.alt && (
               <>
                 <Text style={styles.caddieOr}>alt:</Text>
                 <View style={[styles.caddieClubBadge, styles.caddieClubBadgeAlt]}>

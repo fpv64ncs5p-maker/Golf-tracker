@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getClubDistances, saveClubDistances, getRangeDrills, consumeReadError } from '../../services/storage';
+import { getClubDistances, saveClubDistances, getRangeDrills, getRounds, consumeReadError } from '../../services/storage';
 import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { ClubDistance, RangeDrill } from '../../types';
 import { router } from 'expo-router';
 import { CLUBS, loftsFrom } from '../../data/clubs';
+import { parseLCR, formatLCR, roundDirections, aimTip, type LCR } from '../../services/caddie';
 
 const GAP_THRESHOLD = 10;     // flag a club when drill avg differs by ≥ this many metres
 const MIN_DRILL_SHOTS = 3;    // need at least this many drill shots before flagging
@@ -24,6 +25,11 @@ export default function ClubsScreen() {
   const [total, setTotal] = useState('');
   const [ballSpeed, setBallSpeed] = useState('');
   const [loft, setLoft] = useState('');
+  const [dirL, setDirL] = useState('');
+  const [dirC, setDirC] = useState('');
+  const [dirR, setDirR] = useState('');
+  const [note, setNote] = useState('');
+  const [roundDirs, setRoundDirs] = useState<Record<string, LCR>>({});
   const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
@@ -31,6 +37,7 @@ export default function ClubsScreen() {
     setClubDistances(data);
     const drills = await getRangeDrills();
     setDrillStats(computeDrillStats(drills));
+    setRoundDirs(roundDirections(await getRounds()));
     setLoadError(consumeReadError());
   };
 
@@ -89,6 +96,11 @@ export default function ClubsScreen() {
     setTotal(existing?.total ?? '');
     setBallSpeed(existing?.ballSpeed ?? '');
     setLoft(lofts[clubName] ?? '');
+    const d = parseLCR(existing?.direction);
+    setDirL(d?.left ? String(d.left) : '');
+    setDirC(d?.centre ? String(d.centre) : '');
+    setDirR(d?.right ? String(d.right) : '');
+    setNote(existing?.note ?? '');
     setEditingClub(clubName);
   };
 
@@ -102,6 +114,8 @@ export default function ClubsScreen() {
         total,
         ballSpeed,
         loft: loft.replace(/[^0-9.,]/g, '').replace(',', '.'),
+        direction: formatLCR({ left: pctNum(dirL), centre: pctNum(dirC), right: pctNum(dirR) }).replace('—', ''),
+        note: note.trim(),
         updatedAt: new Date().toISOString(),
       },
     };
@@ -129,6 +143,7 @@ export default function ClubsScreen() {
   };
 
   const lofts = loftsFrom(clubDistances);
+  const pctNum = (t: string) => { const n = Math.round(parseFloat(t.replace(',', '.'))); return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 0; };
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -168,16 +183,26 @@ export default function ClubsScreen() {
                           {'  ·  '}Total: <Text style={styles.statBold}>{data.total}m</Text>
                           {data.ballSpeed ? `  ·  Speed: ${data.ballSpeed} km/h` : ''}
                         </Text>
-                        {data.direction ? (
-                          <Text style={styles.directionRow}>
-                            🎯 <Text style={styles.directionText}>{data.direction}</Text>
-                            {data.note ? <Text style={styles.directionNote}>  · {data.note}</Text> : null}
-                          </Text>
-                        ) : null}
                       </>
                     ) : (
                       <Text style={styles.noData}>Tap to add distances</Text>
                     )}
+                    {data?.direction ? (
+                      <Text style={styles.directionRow}>
+                        🎯 Trackman: <Text style={styles.directionText}>{data.direction}</Text>
+                      </Text>
+                    ) : null}
+                    {roundDirs[club.name] ? (
+                      <Text style={styles.directionRow}>
+                        ⛳ Rounds: <Text style={styles.directionText}>{formatLCR(roundDirs[club.name])}</Text>
+                        <Text style={styles.directionNote}>  · {roundDirs[club.name].shots} shot{roundDirs[club.name].shots === 1 ? '' : 's'}</Text>
+                      </Text>
+                    ) : null}
+                    {(() => {
+                      const tip = aimTip(parseLCR(data?.direction), roundDirs[club.name]);
+                      return tip ? <Text style={styles.aimTip}>↳ {tip}</Text> : null;
+                    })()}
+                    {data?.note ? <Text style={styles.noteText}>📝 {data.note}</Text> : null}
                     {data?.drillAvg && (
                       <Text style={styles.drillSaved}>
                         🎯 Drill avg: <Text style={styles.drillSavedBold}>{data.drillAvg}m</Text>
@@ -260,6 +285,30 @@ export default function ClubsScreen() {
                     </View>
                   </View>
 
+                  <Text style={styles.inputLabel}>Trackman direction — % of shots</Text>
+                  <View style={styles.inputRow}>
+                    {([['Left', dirL, setDirL], ['Centre', dirC, setDirC], ['Right', dirR, setDirR]] as const).map(([lbl, val, set]) => (
+                      <View key={lbl} style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>{lbl} %</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={val}
+                          onChangeText={set}
+                          keyboardType="numeric"
+                          placeholder="—"
+                        />
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text style={styles.inputLabel}>Note (shown by the caddie)</Text>
+                  <TextInput
+                    style={[styles.input, { marginBottom: 12 }]}
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder="e.g. Into headwind: one club more"
+                  />
+
                   <TouchableOpacity style={styles.saveBtn} onPress={saveClub}>
                     <Text style={styles.saveBtnText}>✓ Save</Text>
                   </TouchableOpacity>
@@ -294,6 +343,8 @@ const styles = StyleSheet.create({
   directionRow: { fontSize: 12, color: '#555', marginTop: 3 },
   directionText: { fontWeight: '700', color: '#1565C0' },
   directionNote: { color: '#888', fontStyle: 'italic' },
+  aimTip: { fontSize: 12, color: '#e65100', fontWeight: '600', marginTop: 3 },
+  noteText: { fontSize: 12, color: '#666', fontStyle: 'italic', marginTop: 3 },
   drillSaved: { fontSize: 13, color: '#555', marginTop: 4 },
   drillSavedBold: { fontWeight: '700', color: '#e65100' },
   drillLive: { fontSize: 12, color: '#999', marginTop: 2 },
