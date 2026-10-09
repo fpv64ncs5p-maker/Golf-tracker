@@ -16,14 +16,11 @@ import {
   puttingCourseAverage, round1, type PuttingAverage,
 } from '../constants/scoring';
 import { TEE_COLOUR_MAP } from '../constants/theme';
+import { CLUBS, withLoft } from '../data/clubs';
+import { useClubLofts } from '../services/clubLofts';
 
 // ── Club list ─────────────────────────────────────────────────────────────────
 
-const CLUBS = [
-  'Driver', '3W', '5W', '4H', '5H',
-  '4i', '5i', '6i', '7i', '8i', '9i',
-  'PW', 'GW', 'SW', 'LW',
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,6 +68,7 @@ export default function RangeDrillScreen() {
   const [currentShots, setCurrentShots] = useState<RangeDrillShot[]>([]);
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [distanceInput, setDistanceInput] = useState('');
+  const lofts = useClubLofts();
 
   // Putts per hole for the estimated score: the current Putting Course average
   // (loaded once), frozen into `drillPutts` when a drill starts or resumes.
@@ -576,7 +574,7 @@ export default function RangeDrillScreen() {
             currentShots.map((shot, i) => (
               <View key={i} style={styles.shotRow}>
                 <Text style={styles.shotNumber}>#{i + 1}</Text>
-                <Text style={styles.shotClub}>{shot.club}</Text>
+                <Text style={styles.shotClub}>{withLoft(shot.club, lofts)}</Text>
                 <Text style={styles.shotDist}>{shot.distance != null ? `${shot.distance}m` : '—'}</Text>
                 <TouchableOpacity onPress={() => removeShot(i)} style={styles.shotRemove}>
                   <Text style={styles.shotRemoveText}>✕</Text>
@@ -619,7 +617,7 @@ export default function RangeDrillScreen() {
                 onPress={() => setSelectedClub(selectedClub === club ? null : club)}
               >
                 <Text style={[styles.clubChipText, selectedClub === club && styles.clubChipTextSelected]}>
-                  {club}
+                  {withLoft(club, lofts)}
                 </Text>
               </TouchableOpacity>
             ))}

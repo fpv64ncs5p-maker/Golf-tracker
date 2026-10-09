@@ -11,10 +11,15 @@
  */
 import type { PracticeSession, PuttingCourseHole, ChippingCourseHole, ChipLie } from '../types';
 import { PUTTS_PER_HOLE, CHIP_COURSE_PAR, CHIP_LIES, PUTT_AVG_WINDOW_HOLES, round1 } from '../constants/scoring';
+import { SHORT_GAME_CLUBS } from '../data/clubs';
 
 export const SHORT_GAME_WINDOW = PUTT_AVG_WINDOW_HOLES; // 45 — same window as the Range Drill putt average
 export const SPOT_MIN_HOLES = 5;                        // a group needs this many holes to be named a focus spot
 export const TREND_MIN_HOLES = 9;                       // the previous window needs this many holes for a trend
+// Club comparison (which wedge where): uses the most recent CLUB_WINDOW holes that have a
+// club — wider than SHORT_GAME_WINDOW because the holes get split across club × lie × distance.
+export const CLUB_WINDOW = 2 * SHORT_GAME_WINDOW;       // 90
+export const CLUB_MIN_HOLES = 3;                        // a club needs this many holes in a situation to be compared
 
 export interface Band { label: string; min: number; max: number } // metres, [min, max)
 
@@ -71,10 +76,21 @@ const chipStats = (hs: ChippingCourseHole[]): ChipStats => {
   };
 };
 
+/** One situation (lie × distance) where two or more clubs have enough holes to compare. */
+export interface ClubComparison {
+  lie: ChipLie;
+  band: Band;
+  clubs: { club: string; stats: ChipStats }[]; // best first
+  best: string | null;                          // null when the top two are level
+}
+
 export interface ChippingAnalysis {
   totalHoles: number;
   overall: ChipStats;
   byLie: { lie: ChipLie; stats: ChipStats }[];
+  byClub: { club: string; stats: ChipStats }[];  // club-tagged holes in the club window, bag order
+  clubHoles: number;                             // holes in the club window
+  compare: ClubComparison[];                     // situations with ≥ 2 comparable clubs
   bands: { band: Band; stats: ChipStats }[];
   noDistance: number;
   trend: { recent: number; previous: number; direction: TrendDirection } | null; // up & down % (higher is better)
@@ -162,7 +178,32 @@ export const analyzeShortGame = (sessions: PracticeSession[]): ShortGameAnalysis
       const diff = overall.upDownPct - prev.upDownPct;
       trend = { recent: overall.upDownPct, previous: prev.upDownPct, direction: diff >= 5 ? 'better' : diff <= -5 ? 'worse' : 'same' };
     }
-    chipping = { totalHoles: allChips.length, overall, byLie, bands, noDistance: recent.filter(h => h.distance == null).length, trend };
+    // ── Which club where
+    const withClub = allChips.filter(h => !!h.club).slice(-CLUB_WINDOW);
+    const clubOrder = (c: string) => { const i = SHORT_GAME_CLUBS.indexOf(c); return i < 0 ? 99 : i; };
+    const clubsUsed = [...new Set(withClub.map(h => h.club!))].sort((a, b) => clubOrder(a) - clubOrder(b));
+    const byClub = clubsUsed.map(club => ({ club, stats: chipStats(withClub.filter(h => h.club === club)) }));
+    const better = (a: ChipStats, b: ChipStats) =>
+      b.upDownPct - a.upDownPct || (a.avgStrokes ?? 9) - (b.avgStrokes ?? 9);
+    const compare: ClubComparison[] = [];
+    for (const lie of CHIP_LIES) {
+      for (const band of CHIP_BANDS) {
+        const spot = withClub.filter(h => h.lie === lie && inBand(band, h.distance));
+        const clubs = clubsUsed
+          .map(club => ({ club, stats: chipStats(spot.filter(h => h.club === club)) }))
+          .filter(c => c.stats.holes >= CLUB_MIN_HOLES)
+          .sort((a, b) => better(a.stats, b.stats));
+        if (clubs.length < 2) continue;
+        const level = clubs[0].stats.upDownPct === clubs[1].stats.upDownPct
+          && clubs[0].stats.avgStrokes === clubs[1].stats.avgStrokes;
+        compare.push({ lie, band, clubs, best: level ? null : clubs[0].club });
+      }
+    }
+
+    chipping = {
+      totalHoles: allChips.length, overall, byLie, byClub, clubHoles: withClub.length, compare,
+      bands, noDistance: recent.filter(h => h.distance == null).length, trend,
+    };
 
     // Candidates, most specific first: lie × distance, then lie, then distance.
     type Cand = { label: string; stats: ChipStats; specificity: number; practice: string };

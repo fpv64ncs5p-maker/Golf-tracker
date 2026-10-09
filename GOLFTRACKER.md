@@ -1,6 +1,13 @@
 # ⛳ Golf Tracker App — Spec & Decision Log
 
 ## Maintenance Log
+- **2026-10-09** — **Lofts dos wedges: qual clube funciona melhor em cada situação (pedido da Jo — novos 52° e 60°).** A Jo pratica com dois wedges novos e quer comparar. **Decisões da Jo:** fazer A + B + C com **52° / 56° / 60°**; o **SW antigo sempre foi 56°** (histórico conta como 56°); **GW e LW são novos** (nunca teve); lofts dos outros clubes **desconhecidos** → ficam em branco (editáveis).
+  **Modelo:** os registos guardam o **nome do slot** (GW/SW/LW); o loft é só uma etiqueta (`ClubDistance.loft`, defaults em `data/clubs.ts` `DEFAULT_LOFTS = { GW: 52, SW: 56, LW: 60 }`). Trocar de wedge = editar o loft; dados antigos ficam no slot. Loft apagado ('') fica apagado (não volta ao default).
+  **B · Bag partilhado:** `data/clubs.ts` exporta `CLUBS`, `SHORT_GAME_CLUBS`, `loftsFrom()`, `withLoft()` ("SW 56°") — substitui as 5 listas copiadas (range-drill, range-drill-detail, round-hole [+3i, Putter], session, session-detail, clubs). Hook `services/clubLofts.ts` `useClubLofts()` (relê ao ganhar foco). Separador Clubs: campo **Loft (°)** e loft ao lado do nome; linha de distâncias só aparece com carry/total.
+  **A · Etiquetas:** todos os seletores e listas de pancadas mostram o loft (Range Drill, detalhe, buraco da ronda, Target drills, sessão e detalhe).
+  **C · Chipping Course:** `ChippingCourseHole.club?` (opcional; buracos antigos sem clube). Seletor **Club** por baixo da Lie, lembra o último (como a lie), tocar de novo limpa; também na edição de buraco, no editor de buracos (`PuttingCourseEditor` prop `clubs`/`clubLabel`, novo buraco herda o clube do anterior), no rascunho (`PendingDrill.courseClub`) e nos chips "H3 · RO · 52°".
+  **Insights (`shortGame.ts`):** `byClub` (up & down por clube) e **"Which club where"** = lie × distância onde **≥2 clubes têm ≥3 buracos** (`CLUB_MIN_HOLES`), melhor primeiro (up & down %, empate → menos strokes; "level" se iguais). Janela própria: últimos **90** buracos com clube (`CLUB_WINDOW`), mais larga que os 45 porque os buracos se dividem por clube × lie × distância. O ponto fraco/recomendação **não** muda.
+  tsc + eslint limpos; análise e etiquetas testadas em node. Não testado no browser.
 - **2026-09-16** — **Auditoria: nada de escrito se perde por interrupção (pedido da Jo depois do caso do chipping).** Revisto o que cada ecrã guardava vs. o que só vivia em memória. A Jo escolheu corrigir **tudo** e **avisar** antes de sobrepor uma sessão por acabar.
   **1. Buraco em curso na ronda** (`round-hole.tsx`): as pancadas e putts só iam para o rascunho no "Save hole & continue". Agora `DraftRound.currentHole` (`InProgressHole`) é gravado a cada pancada/putt e reposto ao abrir o buraco (o pendente ganha ao já gravado, é mais recente); limpo ao gravar o buraco. Guardas: flag `hydrated` (não grava antes de carregar) e só limpa o `currentHole` **desse** buraco. `round-complete` tira o `currentHole` antes de gravar a ronda.
   **2. Importar ronda** (`round-import.tsx`): novo `DraftImport` (AsyncStorage `draftImport`) com campo a campo — curso, tee, data, 9/18, front/back e todos os scores; reposto ao abrir com banner "↺ Restored the card you had started · ✕ Start fresh"; limpo ao gravar. O efeito que reinicia os buracos respeita os scores repostos (`restoredScores` ref).
@@ -288,7 +295,8 @@ app/
 
 ### 🏌️ My Club Distances (`clubs.tsx`)
 - Full list of clubs: Driver, 3W, 5W, 4H, 5H, 4i–9i, PW, GW, SW, LW
-- Tap any club to log Trackman data: **Carry (m)**, **Total (m)**, **Ball Speed (km/h)**
+- Tap any club to log **Loft (°)** and Trackman data: **Carry (m)**, **Total (m)**, **Ball Speed (km/h)**
+- Wedge lofts: GW 52°, SW 56°, LW 60° (defaults in `data/clubs.ts`; other lofts blank until known). Shown everywhere as e.g. "SW 56°"
 - Shows last updated date per club
 - Used as an on-course reference for club selection
 - Saves to `clubDistances` key

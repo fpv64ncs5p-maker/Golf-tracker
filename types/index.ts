@@ -96,6 +96,7 @@ export interface ChippingCourseHole {
   distance: number | null;  // metres from the ball to the hole; null if not measured
   lie: ChipLie;
   strokes: number;          // strokes to hole out, chip included (1 = chip-in, 2 = up and down)
+  club?: string;            // club chipped with (slot name, e.g. 'SW'); absent on holes logged before Oct 2026
 }
 
 /**
@@ -107,6 +108,7 @@ export interface CourseEditorHole {
   distance: number | null;
   strokes: number;
   lie?: ChipLie;
+  club?: string;   // Chipping Course only
 }
 
 /**
@@ -300,6 +302,7 @@ export interface PendingDrill {
   mode?: 'drill' | 'course';       // which mode the screen was in (Putting/Chipping)
   courseDistance?: string;         // metres typed for the hole in progress
   courseLie?: ChipLie;             // lie chosen for the next Chipping Course hole
+  courseClub?: string;             // club chosen for the next Chipping Course hole
 }
 
 /**
@@ -388,6 +391,7 @@ export interface ClubDistance {
   direction?: string;
   note?: string;
   updatedAt: string;
+  loft?: string;             // degrees, e.g. '56' — shown next to the club name (see data/clubs.ts)
   // Real on-course average from saved range drills (kept separate from carry/total).
   drillAvg?: string;
   drillCount?: number;       // how many drill shots the average is based on

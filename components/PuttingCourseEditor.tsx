@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet } from 'react-native';
 import type { CourseEditorHole, ChipLie } from '../types';
 import { PUTTS_PER_HOLE } from '../constants/scoring';
 
@@ -40,7 +40,7 @@ function MetresInput({ value, onChange }: { value: number | null; onChange: (v: 
  * the Chipping Course (pass `lies`). Holes are always numbered 1..n in order.
  */
 export default function PuttingCourseEditor({
-  holes, onChange, summary, strokesLabel = 'Putts', distanceLabel = 'From edge', lies,
+  holes, onChange, summary, strokesLabel = 'Putts', distanceLabel = 'From edge', lies, clubs, clubLabel = c => c,
 }: {
   holes: CourseEditorHole[];
   onChange: (holes: CourseEditorHole[]) => void;
@@ -48,6 +48,8 @@ export default function PuttingCourseEditor({
   strokesLabel?: string;
   distanceLabel?: string;
   lies?: readonly ChipLie[];
+  clubs?: readonly string[];               // Chipping Course: club per hole (optional, tap again to clear)
+  clubLabel?: (club: string) => string;    // e.g. "SW 56°"
 }) {
   const renumber = (hs: CourseEditorHole[]) => hs.map((h, i) => ({ ...h, hole: i + 1 }));
   const update = (i: number, patch: Partial<CourseEditorHole>) =>
@@ -91,13 +93,22 @@ export default function PuttingCourseEditor({
               ))}
             </View>
           )}
+          {clubs && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lieRow}>
+              {clubs.map(c => (
+                <TouchableOpacity key={c} style={[styles.lieBtn, h.club === c && styles.clubBtnActive]} onPress={() => update(i, { club: h.club === c ? undefined : c })}>
+                  <Text style={[styles.lieText, h.club === c && styles.lieTextActive]}>{clubLabel(c)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </View>
       ))}
       <TouchableOpacity
         style={styles.addHole}
         onPress={() => onChange([
           ...holes,
-          { hole: holes.length + 1, distance: null, strokes: PUTTS_PER_HOLE, ...(lies ? { lie: holes[holes.length - 1]?.lie ?? lies[0] } : {}) },
+          { hole: holes.length + 1, distance: null, strokes: PUTTS_PER_HOLE, ...(lies ? { lie: holes[holes.length - 1]?.lie ?? lies[0] } : {}), ...(clubs && holes[holes.length - 1]?.club ? { club: holes[holes.length - 1].club } : {}) },
         ])}
       >
         <Text style={styles.addHoleText}>+ Add hole</Text>
@@ -117,6 +128,7 @@ const styles = StyleSheet.create({
   lieBtnActive: { backgroundColor: '#8d6e63', borderColor: '#8d6e63' },
   lieText: { fontSize: 12, color: '#555' },
   lieTextActive: { color: '#fff', fontWeight: '600' },
+  clubBtnActive: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
   holeNum: { width: 40, fontSize: 15, fontWeight: '700', color: '#333' },
   metresInput: { width: 64, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 8, fontSize: 14, backgroundColor: '#fafafa' },
   unit: { fontSize: 13, color: '#888' },

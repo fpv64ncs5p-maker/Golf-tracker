@@ -9,6 +9,8 @@ import {
   puttingToEditor, editorToPutting, chippingToEditor, editorToChipping,
 } from '../constants/scoring';
 import PuttingCourseEditor, { parseMetres, puttColour, LIE_SHORT } from '../components/PuttingCourseEditor';
+import { SHORT_GAME_CLUBS, withLoft } from '../data/clubs';
+import { useClubLofts } from '../services/clubLofts';
 
 // ── Drill suggestions ─────────────────────────────────────────────────────────
 
@@ -36,7 +38,6 @@ const LEGACY_SUGGESTIONS: Record<string, { name: string; attempts: string }[]> =
   ],
 };
 
-const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
 // ── Grid helpers ──────────────────────────────────────────────────────────────
 
@@ -193,11 +194,14 @@ export default function SessionScreen() {
   const [courseHoles, setCourseHoles] = useState<CourseEditorHole[]>([]);
   const [courseDistance, setCourseDistance] = useState('');
   const [courseLie, setCourseLie] = useState<ChipLie>('Fairway'); // Chipping: lie for the next hole
+  const [courseClub, setCourseClub] = useState<string | null>(null); // Chipping: club for the next hole (kept, like lie)
+  const lofts = useClubLofts();
   // Going back to a logged hole: its index, the strokes/lie being chosen, and the
   // new-hole metres typed before jumping back (restored afterwards).
   const [editingHole, setEditingHole] = useState<number | null>(null);
   const [editPutts, setEditPutts] = useState(PUTTS_PER_HOLE);
   const [editLie, setEditLie] = useState<ChipLie>('Fairway');
+  const [editClub, setEditClub] = useState<string | null>(null);
   const [stashedDistance, setStashedDistance] = useState('');
   const [showHoleList, setShowHoleList] = useState(false);
   const courseMode = courseKind !== null && drillMode === 'course';
@@ -240,6 +244,7 @@ export default function SessionScreen() {
         setOverrideThreshold(p.overrideThreshold ?? null);
         setCourseDistance(p.courseDistance ?? '');
         if (p.courseLie) setCourseLie(p.courseLie);
+        if (p.courseClub) setCourseClub(p.courseClub);
       if (p.mode) setDrillMode(p.mode);
     }
   };
@@ -292,6 +297,7 @@ export default function SessionScreen() {
       mode: drillMode,
       courseDistance: courseDistance || undefined,
       courseLie: courseKind === 'chipping' ? courseLie : undefined,
+      courseClub: courseKind === 'chipping' ? courseClub ?? undefined : undefined,
     } : undefined;
     saveDraftSession({
       type: sessionType,
@@ -305,7 +311,7 @@ export default function SessionScreen() {
       startedAt: new Date(Date.now() - seconds * 1000).toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drills, proxDrills, notes, courseHoles, drillName, buckets, grid, made, attempts, proxClub, overrideThreshold, drillMode, courseDistance, courseLie]);
+  }, [drills, proxDrills, notes, courseHoles, drillName, buckets, grid, made, attempts, proxClub, overrideThreshold, drillMode, courseDistance, courseLie, courseClub]);
 
   // Load adaptive level for chipping/pitching
   useEffect(() => {
@@ -371,7 +377,7 @@ export default function SessionScreen() {
       hole: prev.length + 1,
       distance: parseMetres(courseDistance),
       strokes,
-      ...(courseKind === 'chipping' ? { lie: courseLie } : {}),
+      ...(courseKind === 'chipping' ? { lie: courseLie, ...(courseClub ? { club: courseClub } : {}) } : {}),
     }]);
     setCourseDistance('');
   };
@@ -390,6 +396,7 @@ export default function SessionScreen() {
     setEditingHole(i);
     setEditPutts(h.strokes);
     setEditLie(h.lie ?? 'Fairway');
+    setEditClub(h.club ?? null);
     setCourseDistance(h.distance != null ? String(h.distance) : '');
   };
 
@@ -404,7 +411,7 @@ export default function SessionScreen() {
     editingHole === null || !holes[editingHole]
       ? holes
       : holes.map((h, i) => (i === editingHole
-        ? { ...h, distance: parseMetres(courseDistance), strokes: editPutts, ...(courseKind === 'chipping' ? { lie: editLie } : {}) }
+        ? { ...h, distance: parseMetres(courseDistance), strokes: editPutts, ...(courseKind === 'chipping' ? { lie: editLie, club: editClub ?? undefined } : {}) }
         : h));
 
   const saveHoleEdit = () => {
@@ -613,7 +620,7 @@ export default function SessionScreen() {
               <View key={i} style={styles.drillItem}>
                 <View style={styles.drillNameCol}>
                   <Text style={styles.drillName}>{d.name}</Text>
-                  {d.club && <Text style={styles.drillClub}>{d.club}</Text>}
+                  {d.club && <Text style={styles.drillClub}>{withLoft(d.club, lofts)}</Text>}
                 </View>
                 <View style={styles.drillScoreCol}>
                   <Text style={styles.drillScore}>{d.attempts} shots · {d.success}% ≤{d.threshold ?? 2}m</Text>
@@ -720,6 +727,8 @@ export default function SessionScreen() {
               strokesLabel={courseKind === 'chipping' ? 'Strokes' : 'Putts'}
               distanceLabel={courseKind === 'chipping' ? 'To hole' : 'From edge'}
               lies={courseKind === 'chipping' ? CHIP_LIES : undefined}
+              clubs={courseKind === 'chipping' ? SHORT_GAME_CLUBS : undefined}
+              clubLabel={c => withLoft(c, lofts)}
             />
             <TouchableOpacity style={styles.doneBtn} onPress={() => setShowHoleList(false)}>
               <Text style={styles.doneBtnText}>✓ Done · back to hole {courseHoles.length + 1}</Text>
@@ -753,6 +762,24 @@ export default function SessionScreen() {
                     );
                   })}
                 </View>
+
+                <Text style={styles.clubSelectorLabel}>Club</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={[styles.chipsContainer, { marginBottom: 8 }]}>
+                  {SHORT_GAME_CLUBS.map(c => {
+                    const current = editingHole !== null ? editClub : courseClub;
+                    const active = current === c;
+                    const pick = editingHole !== null ? setEditClub : setCourseClub;
+                    return (
+                      <TouchableOpacity
+                        key={c}
+                        style={[styles.chip, active && styles.chipSelected]}
+                        onPress={() => pick(active ? null : c)}
+                      >
+                        <Text style={[styles.chipText, active && styles.chipTextSelected]}>{withLoft(c, lofts)}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               </>
             )}
 
@@ -820,7 +847,7 @@ export default function SessionScreen() {
                       style={[styles.holeChip, editingHole === i && styles.holeChipSelected]}
                       onPress={() => (editingHole === i ? endHoleEdit() : startHoleEdit(i))}
                     >
-                      <Text style={styles.holeChipHole}>H{h.hole}{h.lie ? ` · ${LIE_SHORT[h.lie]}` : ''}</Text>
+                      <Text style={styles.holeChipHole}>H{h.hole}{h.lie ? ` · ${LIE_SHORT[h.lie]}` : ''}{h.club ? ` · ${lofts[h.club] ? `${lofts[h.club]}°` : h.club}` : ''}</Text>
                       <Text style={styles.holeChipDist}>{h.distance != null ? `${h.distance}m` : '—'}</Text>
                       <Text style={[styles.holeChipPutts, { color: puttColour(h.strokes) }]}>{h.strokes}</Text>
                     </TouchableOpacity>
@@ -872,7 +899,7 @@ export default function SessionScreen() {
                   style={[styles.chip, proxClub === club && styles.chipSelected]}
                   onPress={() => setProxClub(proxClub === club ? null : club)}
                 >
-                  <Text style={[styles.chipText, proxClub === club && styles.chipTextSelected]}>{club}</Text>
+                  <Text style={[styles.chipText, proxClub === club && styles.chipTextSelected]}>{withLoft(club, lofts)}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -959,7 +986,7 @@ export default function SessionScreen() {
                       style={[styles.chip, proxClub === club && styles.chipSelected]}
                       onPress={() => setProxClub(proxClub === club ? null : club)}
                     >
-                      <Text style={[styles.chipText, proxClub === club && styles.chipTextSelected]}>{club}</Text>
+                      <Text style={[styles.chipText, proxClub === club && styles.chipTextSelected]}>{withLoft(club, lofts)}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>

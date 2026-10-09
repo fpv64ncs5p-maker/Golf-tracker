@@ -170,6 +170,6 @@ export const puttingToEditor = (hs: PuttingCourseHole[]): CourseEditorHole[] =>
 export const editorToPutting = (hs: CourseEditorHole[]): PuttingCourseHole[] =>
   hs.map(h => ({ hole: h.hole, distance: h.distance, putts: h.strokes }));
 export const chippingToEditor = (hs: ChippingCourseHole[]): CourseEditorHole[] =>
-  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.strokes, lie: h.lie }));
+  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.strokes, lie: h.lie, ...(h.club ? { club: h.club } : {}) }));
 export const editorToChipping = (hs: CourseEditorHole[]): ChippingCourseHole[] =>
-  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.strokes, lie: h.lie ?? 'Fairway' }));
+  hs.map(h => ({ hole: h.hole, distance: h.distance, strokes: h.strokes, lie: h.lie ?? 'Fairway', ...(h.club ? { club: h.club } : {}) }));

@@ -13,8 +13,9 @@ import {
   puttingToEditor, editorToPutting, chippingToEditor, editorToChipping,
 } from '../constants/scoring';
 import PuttingCourseEditor, { puttColour, LIE_SHORT } from '../components/PuttingCourseEditor';
+import { SHORT_GAME_CLUBS, withLoft } from '../data/clubs';
+import { useClubLofts } from '../services/clubLofts';
 
-const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
 
 const GRID_SUGGESTIONS: Record<string, string[]> = {
   Putting: ['Short Putts 1m', 'Short Putts 2m', 'Short Putts 3m', 'Lag Putting 6m', 'Lag Putting 9m', 'Lag Putting 12m', 'Pressure Ladder'],
@@ -231,6 +232,7 @@ export default function SessionDetailScreen() {
   const [editGrid, setEditGrid] = useState<DirectionGrid>(emptyGrid());
   const [editBuckets, setEditBuckets] = useState<ProximityBuckets>(emptyBuckets());
   const [editClub, setEditClub] = useState<string | null>(null);
+  const lofts = useClubLofts();
   const [editCourse, setEditCourse] = useState<CourseEditorHole[]>([]);
   // Legacy edit
   const [editMade, setEditMade] = useState('');
@@ -471,6 +473,8 @@ export default function SessionDetailScreen() {
             strokesLabel={chip ? 'Strokes' : 'Putts'}
             distanceLabel={chip ? 'To hole' : 'From edge'}
             lies={chip ? CHIP_LIES : undefined}
+            clubs={chip ? SHORT_GAME_CLUBS : undefined}
+            clubLabel={c => withLoft(c, lofts)}
           />
           <View style={styles.editActions}>
             <TouchableOpacity onPress={confirmEdit} style={styles.confirmBtn}>
@@ -513,7 +517,7 @@ export default function SessionDetailScreen() {
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {SHORT_GAME_CLUBS.map(c => (
                     <TouchableOpacity key={c} style={[styles.chip, editClub === c && styles.chipSelected]} onPress={() => setEditClub(editClub === c ? null : c)}>
-                      <Text style={[styles.chipText, editClub === c && styles.chipTextSelected]}>{c}</Text>
+                      <Text style={[styles.chipText, editClub === c && styles.chipTextSelected]}>{withLoft(c, lofts)}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -581,7 +585,7 @@ export default function SessionDetailScreen() {
         <View style={styles.drillInfo}>
           {isProx ? (
             <>
-              <Text style={styles.drillName}>{proxDrill!.chipCourse ? '⛳ ' : ''}{proxDrill!.name}{proxDrill!.club ? ` · ${proxDrill!.club}` : ''}</Text>
+              <Text style={styles.drillName}>{proxDrill!.chipCourse ? '⛳ ' : ''}{proxDrill!.name}{proxDrill!.club ? ` · ${withLoft(proxDrill!.club, lofts)}` : ''}</Text>
               {proxDrill!.chipCourse ? (
                 <>
                   <Text style={styles.drillScore}>{chippingCourseLine(proxDrill!.chipCourse)}</Text>
@@ -589,6 +593,7 @@ export default function SessionDetailScreen() {
                     {proxDrill!.chipCourse.map(h => (
                       <View key={h.hole} style={styles.courseCell}>
                         <Text style={styles.courseCellHole}>{h.hole} · {LIE_SHORT[h.lie]}</Text>
+                        {h.club ? <Text style={styles.courseCellDist}>{withLoft(h.club, lofts)}</Text> : null}
                         <Text style={styles.courseCellDist}>{h.distance != null ? `${h.distance}m` : '—'}</Text>
                         <Text style={[styles.courseCellPutts, { color: puttColour(h.strokes) }]}>{h.strokes}</Text>
                       </View>
@@ -745,7 +750,7 @@ export default function SessionDetailScreen() {
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {SHORT_GAME_CLUBS.map(c => (
                         <TouchableOpacity key={c} style={[styles.chip, newProxClub === c && styles.chipSelected]} onPress={() => setNewProxClub(newProxClub === c ? null : c)}>
-                          <Text style={[styles.chipText, newProxClub === c && styles.chipTextSelected]}>{c}</Text>
+                          <Text style={[styles.chipText, newProxClub === c && styles.chipTextSelected]}>{withLoft(c, lofts)}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -761,6 +766,8 @@ export default function SessionDetailScreen() {
                   strokesLabel="Strokes"
                   distanceLabel="To hole"
                   lies={CHIP_LIES}
+                  clubs={SHORT_GAME_CLUBS}
+                  clubLabel={c => withLoft(c, lofts)}
                 />
               ) : useBuckets ? (
                 <>

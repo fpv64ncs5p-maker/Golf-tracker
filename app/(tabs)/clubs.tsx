@@ -5,27 +5,16 @@ import { getClubDistances, saveClubDistances, getRangeDrills, consumeReadError }
 import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { ClubDistance, RangeDrill } from '../../types';
 import { router } from 'expo-router';
+import { CLUBS, loftsFrom } from '../../data/clubs';
 
 const GAP_THRESHOLD = 10;     // flag a club when drill avg differs by ≥ this many metres
 const MIN_DRILL_SHOTS = 3;    // need at least this many drill shots before flagging
 
-const CLUB_LIST = [
-  { name: 'Driver', label: 'Driver',    emoji: '🏌️' },
-  { name: '3W',     label: '3 Wood',    emoji: '🌲' },
-  { name: '5W',     label: '5 Wood',    emoji: '🌲' },
-  { name: '4H',     label: '4 Hybrid',  emoji: '🔧' },
-  { name: '5H',     label: '5 Hybrid',  emoji: '🔧' },
-  { name: '4i',     label: '4 Iron',    emoji: '🔩' },
-  { name: '5i',     label: '5 Iron',    emoji: '🔩' },
-  { name: '6i',     label: '6 Iron',    emoji: '🔩' },
-  { name: '7i',     label: '7 Iron',    emoji: '🔩' },
-  { name: '8i',     label: '8 Iron',    emoji: '🔩' },
-  { name: '9i',     label: '9 Iron',    emoji: '🔩' },
-  { name: 'PW',     label: 'PW',        emoji: '🥏' },
-  { name: 'GW',     label: 'GW',        emoji: '🥏' },
-  { name: 'SW',     label: 'SW',        emoji: '🥏' },
-  { name: 'LW',     label: 'LW',        emoji: '🥏' },
-];
+const CLUB_NAMES: Record<string, string> = {
+  '3W': '3 Wood', '5W': '5 Wood', '4H': '4 Hybrid', '5H': '5 Hybrid',
+  '4i': '4 Iron', '5i': '5 Iron', '6i': '6 Iron', '7i': '7 Iron', '8i': '8 Iron', '9i': '9 Iron',
+};
+const CLUB_LIST = CLUBS.map(name => ({ name, label: CLUB_NAMES[name] ?? name }));
 
 export default function ClubsScreen() {
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
@@ -34,6 +23,7 @@ export default function ClubsScreen() {
   const [carry, setCarry] = useState('');
   const [total, setTotal] = useState('');
   const [ballSpeed, setBallSpeed] = useState('');
+  const [loft, setLoft] = useState('');
   const [loadError, setLoadError] = useState(false);
 
   const load = async () => {
@@ -98,6 +88,7 @@ export default function ClubsScreen() {
     setCarry(existing?.carry ?? '');
     setTotal(existing?.total ?? '');
     setBallSpeed(existing?.ballSpeed ?? '');
+    setLoft(lofts[clubName] ?? '');
     setEditingClub(clubName);
   };
 
@@ -110,6 +101,7 @@ export default function ClubsScreen() {
         carry,
         total,
         ballSpeed,
+        loft: loft.replace(/[^0-9.,]/g, '').replace(',', '.'),
         updatedAt: new Date().toISOString(),
       },
     };
@@ -135,6 +127,8 @@ export default function ClubsScreen() {
       shorter: g < 0,
     }];
   };
+
+  const lofts = loftsFrom(clubDistances);
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -163,8 +157,11 @@ export default function ClubsScreen() {
               <TouchableOpacity onPress={() => isEditing ? setEditingClub(null) : startEditing(club.name)}>
                 <View style={styles.cardHeader}>
                   <View style={styles.clubInfo}>
-                    <Text style={styles.clubName}>{club.label}</Text>
-                    {data ? (
+                    <Text style={styles.clubName}>
+                      {club.label}
+                      {lofts[club.name] ? <Text style={styles.loftText}>  {lofts[club.name]}°</Text> : null}
+                    </Text>
+                    {data && (data.carry || data.total) ? (
                       <>
                         <Text style={styles.clubStats}>
                           Carry: <Text style={styles.statBold}>{data.carry}m</Text>
@@ -216,6 +213,17 @@ export default function ClubsScreen() {
               {isEditing && (
                 <View style={styles.editForm}>
                   <View style={styles.inputRow}>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Loft (°)</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={loft}
+                        onChangeText={setLoft}
+                        keyboardType="numeric"
+                        placeholder="optional"
+                        returnKeyType="next"
+                      />
+                    </View>
                     <View style={styles.inputGroup}>
                       <Text style={styles.inputLabel}>Carry (m)</Text>
                       <TextInput
@@ -279,6 +287,7 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   clubInfo: { flex: 1 },
   clubName: { fontSize: 17, fontWeight: 'bold', color: '#222', marginBottom: 2 },
+  loftText: { fontSize: 14, fontWeight: '600', color: '#1565C0' },
   clubStats: { fontSize: 13, color: '#555' },
   statBold: { fontWeight: '700', color: '#4CAF50' },
   noData: { fontSize: 13, color: '#bbb', fontStyle: 'italic' },

@@ -3,12 +3,10 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal } from 'rea
 import { router, useLocalSearchParams } from 'expo-router';
 import { getDraftRound, saveDraftRound, getClubDistances, clearDraftRound } from '../services/storage';
 import type { Stroke, HoleData, ClubDistance } from '../types';
+import { CLUBS as BAG, loftsFrom, withLoft } from '../data/clubs';
 
-const CLUBS = [
-  'Driver', '3W', '5W', '4H', '5H',
-  '3i', '4i', '5i', '6i', '7i', '8i', '9i',
-  'PW', 'GW', 'SW', 'LW', 'Putter'
-];
+// The shared bag plus 3i and the putter, which only rounds use
+const CLUBS = [...BAG.slice(0, 5), '3i', ...BAG.slice(5), 'Putter'];
 
 const PENALTY_TYPES = ['Water', 'OB', 'Hazard', 'Other'];
 const PUTT_DIRECTIONS = ['Short', 'Long', 'Left', 'Right'];
@@ -55,6 +53,7 @@ export default function RoundHoleScreen() {
   // so navigation and the progress strip follow this list rather than 1..total.
   const [holeNumbers, setHoleNumbers] = useState<number[]>([]);
   const [clubDistances, setClubDistances] = useState<Record<string, ClubDistance>>({});
+  const lofts = loftsFrom(clubDistances);
   const [showRules, setShowRules] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -454,7 +453,7 @@ export default function RoundHoleScreen() {
         {strokes.map((s, i) => (
           <View key={i} style={styles.strokeItem}>
             <Text style={styles.strokeNumber}>{i + 1}</Text>
-            <Text style={styles.strokeClub}>{s.club}</Text>
+            <Text style={styles.strokeClub}>{withLoft(s.club, lofts)}</Text>
             <Text style={[
               styles.strokeDir,
               s.direction === 'Fairway' || s.direction === 'Green' || s.direction === 'On Target'
@@ -512,7 +511,7 @@ export default function RoundHoleScreen() {
                         isLayup && styles.clubBtnLayup,
                       ]}
                       onPress={() => selectClub(club)}>
-                      <Text style={[styles.clubText, isRecommended && styles.clubTextRecommended]}>{club}</Text>
+                      <Text style={[styles.clubText, isRecommended && styles.clubTextRecommended]}>{withLoft(club, lofts)}</Text>
                       {carry && (
                         <Text style={[styles.clubDist, isRecommended && styles.clubDistRecommended]}>
                           {carry}m

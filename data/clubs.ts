@@ -1,4 +1,39 @@
-// Club distance data and migration mappings
+// Club distance data, the shared club list, lofts and migration mappings
+import type { ClubDistance } from '../types';
+
+/** The bag, tee to green — the one list every club picker uses. */
+export const CLUBS = [
+  'Driver', '3W', '5W', '4H', '5H',
+  '4i', '5i', '6i', '7i', '8i', '9i',
+  'PW', 'GW', 'SW', 'LW',
+];
+
+/** Clubs offered for chipping / pitching drills and the Chipping Course. */
+export const SHORT_GAME_CLUBS = ['7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW'];
+
+/**
+ * Lofts in degrees, used until one is saved on the Clubs tab (ClubDistance.loft).
+ * The SW was always a 56°; the 52° GW and 60° LW were added Oct 2026.
+ * Records keep the slot name (GW/SW/LW) — the loft is only a label, so a wedge
+ * change is just a loft edit and old data stays attached to its slot.
+ */
+export const DEFAULT_LOFTS: Record<string, string> = { GW: '52', SW: '56', LW: '60' };
+
+export type Lofts = Record<string, string>;
+
+/** Saved lofts over the defaults. A loft cleared on the Clubs tab ('') stays cleared. */
+export const loftsFrom = (cd: Record<string, ClubDistance>): Lofts => {
+  const out: Lofts = { ...DEFAULT_LOFTS };
+  for (const [club, d] of Object.entries(cd ?? {})) {
+    if (d && typeof d.loft === 'string') out[club] = d.loft.trim();
+  }
+  return out;
+};
+
+/** "SW" → "SW 56°" when the club has a loft; otherwise the name as is. */
+export const withLoft = (club: string, lofts: Lofts) =>
+  lofts[club] ? `${club} ${lofts[club]}°` : club;
+
 
 export const DEFAULT_CLUB_DISTANCES: Record<string, { carry: string; total: string; ballSpeed: string; direction: string; note: string; updatedAt: string }> = {
   'Driver': { carry: '89',  total: '170', ballSpeed: '', direction: 'C30% R60%',       note: 'Risky – use selectively',           updatedAt: new Date('2026-01-01').toISOString() },

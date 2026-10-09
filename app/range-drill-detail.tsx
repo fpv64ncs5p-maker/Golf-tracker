@@ -8,12 +8,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { getRangeDrills, saveRangeDrills, sortByDate } from '../services/storage';
 import type { RangeDrill, RangeDrillHole } from '../types';
 import { PUTT_AVG_MIN_HOLES, drillPuttsPerHole, round1 } from '../constants/scoring';
+import { CLUBS, withLoft } from '../data/clubs';
+import { useClubLofts } from '../services/clubLofts';
 
-const CLUBS = [
-  'Driver', '3W', '5W', '4H', '5H',
-  '4i', '5i', '6i', '7i', '8i', '9i',
-  'PW', 'GW', 'SW', 'LW',
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +30,7 @@ export default function RangeDrillDetailScreen() {
   const drillIndex = typeof index === 'string' ? parseInt(index) : 0;
 
   const [drill, setDrill] = useState<RangeDrill | null>(null);
+  const lofts = useClubLofts();
   const [originalIndex, setOriginalIndex] = useState(0);
   const [expandedHole, setExpandedHole] = useState<number | null>(null);
 
@@ -338,7 +336,7 @@ export default function RangeDrillDetailScreen() {
                       {h.shots.map((s, j) => (
                         <View key={j} style={styles.shotRow}>
                           <Text style={styles.shotNum}>#{j + 1}</Text>
-                          <Text style={styles.shotClub}>{s.club}</Text>
+                          <Text style={styles.shotClub}>{withLoft(s.club, lofts)}</Text>
                           <Text style={styles.shotDist}>{s.distance != null ? `${s.distance}m` : '—'}</Text>
                         </View>
                       ))}
@@ -364,7 +362,7 @@ export default function RangeDrillDetailScreen() {
                       style={styles.editClubBtn}
                       onPress={() => setClubPicker({ holeIdx: hi, shotIdx: si })}
                     >
-                      <Text style={styles.editClubText}>{s.club} ▾</Text>
+                      <Text style={styles.editClubText}>{withLoft(s.club, lofts)} ▾</Text>
                     </TouchableOpacity>
                     <TextInput
                       style={styles.editDistInput}
@@ -404,7 +402,7 @@ export default function RangeDrillDetailScreen() {
             <View style={styles.clubGrid}>
               {CLUBS.map(c => (
                 <TouchableOpacity key={c} style={styles.clubGridItem} onPress={() => setShotClub(c)}>
-                  <Text style={styles.clubGridText}>{c}</Text>
+                  <Text style={styles.clubGridText}>{withLoft(c, lofts)}</Text>
                 </TouchableOpacity>
               ))}
             </View>

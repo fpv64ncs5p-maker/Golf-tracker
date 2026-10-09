@@ -7,9 +7,10 @@ import LoadErrorBanner from '../../components/LoadErrorBanner';
 import type { PracticeSession, Round, Course, ClubDistance } from '../../types';
 import { ratingForPlay } from '../../services/rating';
 import {
-  analyzeShortGame, trendArrow, trendColour, SPOT_MIN_HOLES, SHORT_GAME_WINDOW,
+  analyzeShortGame, trendArrow, trendColour, SPOT_MIN_HOLES, SHORT_GAME_WINDOW, CLUB_MIN_HOLES,
   type ShortGameAnalysis, type FocusSpot,
 } from '../../services/shortGame';
+import { loftsFrom, withLoft, type Lofts } from '../../data/clubs';
 
 // Club order for display (tee to green)
 const CLUB_ORDER = ['Driver','3W','5W','4H','5H','3i','4i','5i','6i','7i','8i','9i','PW','GW','SW','LW','Putter'];
@@ -54,7 +55,7 @@ function SgRow({ label, holes, value, barPct, colour, right }: {
   );
 }
 
-function ShortGameCard({ sg }: { sg: ShortGameAnalysis }) {
+function ShortGameCard({ sg, lofts }: { sg: ShortGameAnalysis; lofts: Lofts }) {
   const { putting, chipping } = sg;
   return (
     <View style={[styles.card, sgStyles.card]}>
@@ -130,6 +131,40 @@ function ShortGameCard({ sg }: { sg: ShortGameAnalysis }) {
             />
           ))}
           {chipping.noDistance > 0 && <Text style={sgStyles.note}>{chipping.noDistance} hole{chipping.noDistance === 1 ? '' : 's'} without a distance</Text>}
+
+          {chipping.byClub.length > 0 && (
+            <>
+              <Text style={sgStyles.tableHead}>By club — up & down % · last {chipping.clubHoles} holes with a club</Text>
+              {chipping.byClub.map(c => (
+                <SgRow
+                  key={c.club}
+                  label={withLoft(c.club, lofts)}
+                  holes={c.stats.holes}
+                  value={`${c.stats.upDownPct}%`}
+                  barPct={c.stats.upDownPct}
+                  colour={upDownColour(c.stats.upDownPct)}
+                  right={`${c.stats.upDowns}/${c.stats.holes} · avg ${c.stats.avgStrokes}`}
+                />
+              ))}
+
+              <Text style={sgStyles.tableHead}>Which club where — up & down by lie and distance</Text>
+              {chipping.compare.length === 0 ? (
+                <Text style={sgStyles.note}>
+                  Shows up once two clubs each have {CLUB_MIN_HOLES}+ holes from the same lie and distance band.
+                </Text>
+              ) : chipping.compare.map(cmp => (
+                <View key={`${cmp.lie}-${cmp.band.label}`} style={sgStyles.cmpBox}>
+                  <Text style={sgStyles.cmpTitle}>
+                    {cmp.lie} · {cmp.band.label}
+                    {cmp.best ? <Text style={sgStyles.cmpBest}>  → {withLoft(cmp.best, lofts)}</Text> : <Text style={sgStyles.cmpLevel}>  level</Text>}
+                  </Text>
+                  <Text style={sgStyles.cmpLine}>
+                    {cmp.clubs.map(c => `${withLoft(c.club, lofts)} ${c.stats.upDowns}/${c.stats.holes} (${c.stats.upDownPct}%)`).join('  ·  ')}
+                  </Text>
+                </View>
+              ))}
+            </>
+          )}
         </View>
       )}
 
@@ -164,6 +199,11 @@ const sgStyles = StyleSheet.create({
   rowValue: { fontSize: 13, fontWeight: '700', color: '#333', width: 38, textAlign: 'right' },
   rowRight: { fontSize: 11, color: '#888', width: 74 },
   note: { fontSize: 12, color: '#888', marginTop: 4 },
+  cmpBox: { backgroundColor: '#fff', borderRadius: 8, padding: 8, marginBottom: 6 },
+  cmpTitle: { fontSize: 13, fontWeight: '700', color: '#333' },
+  cmpBest: { color: '#2e7d32' },
+  cmpLevel: { color: '#888', fontWeight: '600' },
+  cmpLine: { fontSize: 12, color: '#555', marginTop: 2 },
   focusBox: { backgroundColor: '#fff3e0', borderRadius: 10, padding: 10, marginBottom: 8, borderLeftWidth: 4, borderLeftColor: '#FF9800' },
   focusLabel: { fontSize: 14, fontWeight: 'bold', color: '#e65100' },
   focusDetail: { fontSize: 13, color: '#555', marginTop: 2 },
@@ -774,7 +814,7 @@ export default function InsightsScreen() {
       ) : (
         <>
           {hasShortGame ? (
-            <ShortGameCard sg={shortGame} />
+            <ShortGameCard sg={shortGame} lofts={loftsFrom(clubDistances)} />
           ) : (
             <View style={styles.card}>
               <Text style={styles.heading}>⛳ Short Game on Course</Text>
